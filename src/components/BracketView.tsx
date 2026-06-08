@@ -20,6 +20,12 @@ type BracketSlot = {
   awayTeam: Team | null;
 };
 
+// Bracket layout constants
+const CARD_H = 70;
+const CARD_W = 210;
+const COL_GAP = 40; // horizontal gap between rounds
+const TOTAL_H = 16 * CARD_H + 15 * 10; // total height to fit 16 R32 cards
+
 export default function BracketView({
   bracket,
   locked,
@@ -38,7 +44,7 @@ export default function BracketView({
 
   async function saveSlot(slot: BracketSlot) {
     if (!slot.matchId) {
-      setFeedback("Este partido aún no tiene equipos (faltan picks de grupos)");
+      setFeedback("Falta llenar tus picks de grupos primero");
       return;
     }
     if (slot.predHomeScore == null || slot.predAwayScore == null) {
@@ -77,16 +83,23 @@ export default function BracketView({
   const finalSlot = slots.find((s) => s.stage === "final");
   const thirdSlot = slots.find((s) => s.stage === "third_place");
 
-  const MATCH_H = 80; // height of each match card
+  // Position of each card's center per round
+  function getCenterY(round: "r32" | "r16" | "qf" | "sf" | "final", idx: number): number {
+    const counts = { r32: 16, r16: 8, qf: 4, sf: 2, final: 1 };
+    const n = counts[round];
+    return (TOTAL_H * (idx + 0.5)) / n;
+  }
+
+  // Width of one round (card + connector area)
+  const ROUND_W = CARD_W + COL_GAP;
+  const totalWidth = ROUND_W * 5 + CARD_W + 60; // 5 rounds + final card + padding for 3rd place
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {feedback && (
         <div
           className={`sticky top-2 z-20 px-3 py-2 rounded text-sm ${
-            feedback.startsWith("Error")
-              ? "bg-red-50 text-red-700"
-              : "bg-green-50 text-green-700"
+            feedback.startsWith("Error") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
           }`}
         >
           {feedback}
@@ -94,215 +107,224 @@ export default function BracketView({
       )}
 
       <div className="overflow-x-auto bg-white border rounded-lg p-4">
-        <div className="flex gap-3 min-w-[1800px]">
-          {/* R32 column - 16 matches stacked */}
-          <BracketColumn title="Dieciseisavos" matches={r32} matchH={MATCH_H} spacing={10} locked={locked}
-            editingMatchNum={editingMatchNum} setEditingMatchNum={setEditingMatchNum}
-            updateSlot={updateSlot} saveSlot={saveSlot} savingId={savingId} />
-
-          <Connectors count={16} matchH={MATCH_H} spacing={10} />
-
-          {/* R16 - 8 matches */}
-          <BracketColumn title="Octavos" matches={r16} matchH={MATCH_H} spacing={MATCH_H + 30} locked={locked}
-            editingMatchNum={editingMatchNum} setEditingMatchNum={setEditingMatchNum}
-            updateSlot={updateSlot} saveSlot={saveSlot} savingId={savingId} />
-
-          <Connectors count={8} matchH={MATCH_H} spacing={MATCH_H + 30} />
-
-          {/* QF - 4 matches */}
-          <BracketColumn title="Cuartos" matches={qf} matchH={MATCH_H} spacing={MATCH_H * 3 + 50} locked={locked}
-            editingMatchNum={editingMatchNum} setEditingMatchNum={setEditingMatchNum}
-            updateSlot={updateSlot} saveSlot={saveSlot} savingId={savingId} />
-
-          <Connectors count={4} matchH={MATCH_H} spacing={MATCH_H * 3 + 50} />
-
-          {/* SF - 2 matches */}
-          <BracketColumn title="Semis" matches={sf} matchH={MATCH_H} spacing={MATCH_H * 7 + 90} locked={locked}
-            editingMatchNum={editingMatchNum} setEditingMatchNum={setEditingMatchNum}
-            updateSlot={updateSlot} saveSlot={saveSlot} savingId={savingId} />
-
-          <Connectors count={2} matchH={MATCH_H} spacing={MATCH_H * 7 + 90} />
-
-          {/* Final + 3rd place */}
-          <div className="flex flex-col gap-3" style={{ width: 170 }}>
-            <div className="text-xs font-semibold text-center pb-1 text-yellow-700">🏆 FINAL</div>
-            <div style={{ marginTop: MATCH_H * 7 + 50 }}>
-              {finalSlot && (
-                <MatchCard slot={finalSlot} locked={locked} matchH={MATCH_H}
-                  isEditing={editingMatchNum === finalSlot.matchNum}
-                  onClick={() => setEditingMatchNum(finalSlot.matchNum)}
-                  onClose={() => setEditingMatchNum(null)}
-                  updateSlot={(p) => updateSlot(finalSlot.matchNum, p)}
-                  onSave={() => saveSlot(finalSlot)}
-                  saving={savingId === finalSlot.matchNum} />
-              )}
+        <div style={{ position: "relative", width: totalWidth, height: TOTAL_H + 40 }}>
+          {/* Column headers */}
+          {["Dieciseisavos", "Octavos", "Cuartos", "Semis", "Final"].map((title, i) => (
+            <div
+              key={title}
+              style={{
+                position: "absolute",
+                left: i * ROUND_W,
+                top: 0,
+                width: CARD_W,
+                textAlign: "center",
+              }}
+              className="text-xs font-semibold text-gray-600"
+            >
+              {title}
             </div>
-            <div className="text-xs font-semibold text-center pt-3 text-amber-700">🥉 3er lugar</div>
-            {thirdSlot && (
-              <MatchCard slot={thirdSlot} locked={locked} matchH={MATCH_H}
-                isEditing={editingMatchNum === thirdSlot.matchNum}
+          ))}
+
+          {/* SVG layer for connector lines */}
+          <svg
+            style={{ position: "absolute", left: 0, top: 25, pointerEvents: "none" }}
+            width={totalWidth}
+            height={TOTAL_H}
+          >
+            {/* R32 → R16 connectors */}
+            {Array.from({ length: 8 }).map((_, i) => {
+              const y1 = getCenterY("r32", i * 2);
+              const y2 = getCenterY("r32", i * 2 + 1);
+              const yMid = getCenterY("r16", i);
+              const x1 = CARD_W;
+              const x2 = ROUND_W;
+              return (
+                <g key={`r32-r16-${i}`} stroke="#d1d5db" strokeWidth="1.5" fill="none">
+                  <path d={`M ${x1} ${y1} H ${(x1 + x2) / 2} V ${yMid} H ${x2}`} />
+                  <path d={`M ${x1} ${y2} H ${(x1 + x2) / 2} V ${yMid}`} />
+                </g>
+              );
+            })}
+            {/* R16 → QF connectors */}
+            {Array.from({ length: 4 }).map((_, i) => {
+              const y1 = getCenterY("r16", i * 2);
+              const y2 = getCenterY("r16", i * 2 + 1);
+              const yMid = getCenterY("qf", i);
+              const x1 = ROUND_W + CARD_W;
+              const x2 = ROUND_W * 2;
+              return (
+                <g key={`r16-qf-${i}`} stroke="#d1d5db" strokeWidth="1.5" fill="none">
+                  <path d={`M ${x1} ${y1} H ${(x1 + x2) / 2} V ${yMid} H ${x2}`} />
+                  <path d={`M ${x1} ${y2} H ${(x1 + x2) / 2} V ${yMid}`} />
+                </g>
+              );
+            })}
+            {/* QF → SF connectors */}
+            {Array.from({ length: 2 }).map((_, i) => {
+              const y1 = getCenterY("qf", i * 2);
+              const y2 = getCenterY("qf", i * 2 + 1);
+              const yMid = getCenterY("sf", i);
+              const x1 = ROUND_W * 2 + CARD_W;
+              const x2 = ROUND_W * 3;
+              return (
+                <g key={`qf-sf-${i}`} stroke="#d1d5db" strokeWidth="1.5" fill="none">
+                  <path d={`M ${x1} ${y1} H ${(x1 + x2) / 2} V ${yMid} H ${x2}`} />
+                  <path d={`M ${x1} ${y2} H ${(x1 + x2) / 2} V ${yMid}`} />
+                </g>
+              );
+            })}
+            {/* SF → Final connectors */}
+            {Array.from({ length: 1 }).map((_, i) => {
+              const y1 = getCenterY("sf", 0);
+              const y2 = getCenterY("sf", 1);
+              const yMid = getCenterY("final", 0);
+              const x1 = ROUND_W * 3 + CARD_W;
+              const x2 = ROUND_W * 4;
+              return (
+                <g key={`sf-final-${i}`} stroke="#facc15" strokeWidth="2" fill="none">
+                  <path d={`M ${x1} ${y1} H ${(x1 + x2) / 2} V ${yMid} H ${x2}`} />
+                  <path d={`M ${x1} ${y2} H ${(x1 + x2) / 2} V ${yMid}`} />
+                </g>
+              );
+            })}
+          </svg>
+
+          {/* Cards */}
+          {r32.map((m, i) => (
+            <PositionedCard key={m.matchNum} slot={m} top={getCenterY("r32", i) - CARD_H / 2 + 25}
+              left={0} locked={locked} editing={editingMatchNum === m.matchNum}
+              onClick={() => setEditingMatchNum(m.matchNum)}
+              onClose={() => setEditingMatchNum(null)}
+              update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
+              saving={savingId === m.matchNum} />
+          ))}
+          {r16.map((m, i) => (
+            <PositionedCard key={m.matchNum} slot={m} top={getCenterY("r16", i) - CARD_H / 2 + 25}
+              left={ROUND_W} locked={locked} editing={editingMatchNum === m.matchNum}
+              onClick={() => setEditingMatchNum(m.matchNum)}
+              onClose={() => setEditingMatchNum(null)}
+              update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
+              saving={savingId === m.matchNum} />
+          ))}
+          {qf.map((m, i) => (
+            <PositionedCard key={m.matchNum} slot={m} top={getCenterY("qf", i) - CARD_H / 2 + 25}
+              left={ROUND_W * 2} locked={locked} editing={editingMatchNum === m.matchNum}
+              onClick={() => setEditingMatchNum(m.matchNum)}
+              onClose={() => setEditingMatchNum(null)}
+              update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
+              saving={savingId === m.matchNum} />
+          ))}
+          {sf.map((m, i) => (
+            <PositionedCard key={m.matchNum} slot={m} top={getCenterY("sf", i) - CARD_H / 2 + 25}
+              left={ROUND_W * 3} locked={locked} editing={editingMatchNum === m.matchNum}
+              onClick={() => setEditingMatchNum(m.matchNum)}
+              onClose={() => setEditingMatchNum(null)}
+              update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
+              saving={savingId === m.matchNum} />
+          ))}
+          {finalSlot && (
+            <PositionedCard slot={finalSlot} top={getCenterY("final", 0) - CARD_H / 2 + 25}
+              left={ROUND_W * 4} locked={locked} editing={editingMatchNum === finalSlot.matchNum}
+              onClick={() => setEditingMatchNum(finalSlot.matchNum)}
+              onClose={() => setEditingMatchNum(null)}
+              update={(p) => updateSlot(finalSlot.matchNum, p)} save={() => saveSlot(finalSlot)}
+              saving={savingId === finalSlot.matchNum}
+              isFinal />
+          )}
+          {/* 3rd place — below final, separately */}
+          {thirdSlot && (
+            <div style={{ position: "absolute", left: ROUND_W * 4, top: TOTAL_H - CARD_H - 20 + 25, width: CARD_W }}>
+              <div className="text-[11px] font-semibold text-center mb-1 text-amber-700">
+                🥉 Tercer lugar
+              </div>
+              <PositionedCard slot={thirdSlot} top={0} left={0}
+                locked={locked} editing={editingMatchNum === thirdSlot.matchNum}
                 onClick={() => setEditingMatchNum(thirdSlot.matchNum)}
                 onClose={() => setEditingMatchNum(null)}
-                updateSlot={(p) => updateSlot(thirdSlot.matchNum, p)}
-                onSave={() => saveSlot(thirdSlot)}
-                saving={savingId === thirdSlot.matchNum} />
-            )}
-          </div>
+                update={(p) => updateSlot(thirdSlot.matchNum, p)} save={() => saveSlot(thirdSlot)}
+                saving={savingId === thirdSlot.matchNum} inline />
+            </div>
+          )}
         </div>
       </div>
 
       <p className="text-xs text-gray-500 px-1">
-        💡 Haz click en cualquier partido para meter marcador. El bracket se arma con tus
-        picks de grupos.
+        💡 Click en cualquier partido para meter marcador. El bracket se arma con tus picks
+        de grupos.
       </p>
     </div>
   );
 }
 
-function BracketColumn({
-  title,
-  matches,
-  matchH,
-  spacing,
-  locked,
-  editingMatchNum,
-  setEditingMatchNum,
-  updateSlot,
-  saveSlot,
-  savingId,
-}: {
-  title: string;
-  matches: BracketSlot[];
-  matchH: number;
-  spacing: number;
-  locked: boolean;
-  editingMatchNum: number | null;
-  setEditingMatchNum: (n: number | null) => void;
-  updateSlot: (n: number, p: Partial<BracketSlot>) => void;
-  saveSlot: (s: BracketSlot) => void;
-  savingId: number | null;
-}) {
+function PositionedCard(props: any) {
+  const { slot, top, left, locked, editing, onClick, onClose, update, save, saving, isFinal, inline } = props;
+  const style: any = inline ? {} : { position: "absolute", top, left, width: CARD_W };
   return (
-    <div className="flex flex-col" style={{ width: 170, gap: spacing - matchH }}>
-      <div className="text-xs font-semibold text-center text-gray-600 pb-1 sticky top-0 bg-white">
-        {title}
-      </div>
-      {matches.map((m) => (
-        <MatchCard
-          key={m.matchNum}
-          slot={m}
-          locked={locked}
-          matchH={matchH}
-          isEditing={editingMatchNum === m.matchNum}
-          onClick={() => setEditingMatchNum(m.matchNum)}
-          onClose={() => setEditingMatchNum(null)}
-          updateSlot={(p) => updateSlot(m.matchNum, p)}
-          onSave={() => saveSlot(m)}
-          saving={savingId === m.matchNum}
-        />
-      ))}
+    <div style={style}>
+      <Card slot={slot} locked={locked} editing={editing}
+        onClick={onClick} onClose={onClose}
+        update={update} save={save} saving={saving} isFinal={isFinal} />
     </div>
   );
 }
 
-function Connectors({
-  count,
-  matchH,
-  spacing,
-}: {
-  count: number;
-  matchH: number;
-  spacing: number;
-}) {
-  // Draw SVG lines connecting pairs of matches to the next round
-  const totalHeight = count * spacing + 30;
-  const lines = [];
-  for (let i = 0; i < count / 2; i++) {
-    const y1 = 30 + i * 2 * spacing + matchH / 2;
-    const y2 = 30 + (i * 2 + 1) * spacing + matchH / 2;
-    const yMid = (y1 + y2) / 2;
-    lines.push(
-      <g key={i}>
-        <line x1="0" y1={y1} x2="10" y2={y1} stroke="#d1d5db" strokeWidth="1.5" />
-        <line x1="0" y1={y2} x2="10" y2={y2} stroke="#d1d5db" strokeWidth="1.5" />
-        <line x1="10" y1={y1} x2="10" y2={y2} stroke="#d1d5db" strokeWidth="1.5" />
-        <line x1="10" y1={yMid} x2="20" y2={yMid} stroke="#d1d5db" strokeWidth="1.5" />
-      </g>
-    );
-  }
-  return (
-    <svg width="20" height={totalHeight} style={{ minWidth: 20 }}>
-      {lines}
-    </svg>
-  );
-}
-
-function MatchCard({
+function Card({
   slot,
   locked,
-  matchH,
-  isEditing,
+  editing,
   onClick,
   onClose,
-  updateSlot,
-  onSave,
+  update,
+  save,
   saving,
-}: {
-  slot: BracketSlot;
-  locked: boolean;
-  matchH: number;
-  isEditing: boolean;
-  onClick: () => void;
-  onClose: () => void;
-  updateSlot: (p: Partial<BracketSlot>) => void;
-  onSave: () => void;
-  saving: boolean;
-}) {
+  isFinal,
+}: any) {
   const hasTeams = !!(slot.homeTeamId && slot.awayTeamId);
-  const home = slot.homeTeam ?? { name: slot.homeLabel, flag: "❓" };
-  const away = slot.awayTeam ?? { name: slot.awayLabel, flag: "❓" };
+  const home = slot.homeTeam ?? { name: slot.homeLabel, flag: "" };
+  const away = slot.awayTeam ?? { name: slot.awayLabel, flag: "" };
   const homeWon = slot.predWinnerTeamId && slot.predWinnerTeamId === slot.homeTeamId;
   const awayWon = slot.predWinnerTeamId && slot.predWinnerTeamId === slot.awayTeamId;
+  const border = isFinal ? "border-yellow-400 border-2" : "border-gray-200";
+  const bg = !hasTeams ? "bg-gray-50" : "bg-white";
 
-  if (isEditing) {
+  if (editing) {
     return (
-      <div className="border-2 border-blue-400 bg-blue-50 rounded p-2 text-xs" style={{ width: 170 }}>
+      <div className={`border-2 border-blue-400 bg-blue-50 rounded p-2 text-xs`} style={{ height: CARD_H + 60 }}>
         <div className="text-[10px] text-gray-500 mb-1">Partido {slot.matchNum}</div>
         <div className="space-y-1">
           <div className="flex items-center gap-1">
-            <span className="text-base w-5">{home.flag}</span>
-            <span className="flex-1 truncate">{home.name}</span>
+            <span className="text-base w-5">{home.flag || "·"}</span>
+            <span className="flex-1 truncate text-[11px]">{home.name}</span>
             <input type="number" min={0} max={20} value={slot.predHomeScore ?? ""}
-              onChange={(e) => updateSlot({ predHomeScore: e.target.value === "" ? null : parseInt(e.target.value) })}
-              className="w-8 px-1 py-0.5 border rounded text-center" />
+              onChange={(e) => update({ predHomeScore: e.target.value === "" ? null : parseInt(e.target.value) })}
+              className="w-9 px-1 py-0.5 border rounded text-center" />
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-base w-5">{away.flag}</span>
-            <span className="flex-1 truncate">{away.name}</span>
+            <span className="text-base w-5">{away.flag || "·"}</span>
+            <span className="flex-1 truncate text-[11px]">{away.name}</span>
             <input type="number" min={0} max={20} value={slot.predAwayScore ?? ""}
-              onChange={(e) => updateSlot({ predAwayScore: e.target.value === "" ? null : parseInt(e.target.value) })}
-              className="w-8 px-1 py-0.5 border rounded text-center" />
+              onChange={(e) => update({ predAwayScore: e.target.value === "" ? null : parseInt(e.target.value) })}
+              className="w-9 px-1 py-0.5 border rounded text-center" />
           </div>
         </div>
-        <div className="flex gap-2 mt-1 text-[10px]">
-          <label className="flex items-center gap-0.5">
+        <div className="flex gap-3 mt-1.5 text-[10px]">
+          <label className="flex items-center gap-1">
             <input type="checkbox" checked={slot.predExtraTime}
-              onChange={(e) => updateSlot({ predExtraTime: e.target.checked })} />
-            ET
+              onChange={(e) => update({ predExtraTime: e.target.checked })} />
+            ET +5
           </label>
-          <label className="flex items-center gap-0.5">
+          <label className="flex items-center gap-1">
             <input type="checkbox" checked={slot.predPenalties}
-              onChange={(e) => updateSlot({ predPenalties: e.target.checked })} />
-            Pen
+              onChange={(e) => update({ predPenalties: e.target.checked })} />
+            Pen +8
           </label>
         </div>
-        <div className="flex gap-1 mt-1">
-          <button onClick={onSave} disabled={saving || locked}
-            className="flex-1 px-2 py-0.5 bg-black text-white text-[10px] rounded disabled:opacity-50">
-            {saving ? "..." : "OK"}
+        <div className="flex gap-1 mt-1.5">
+          <button onClick={save} disabled={saving || locked}
+            className="flex-1 px-2 py-1 bg-black text-white text-[11px] rounded disabled:opacity-50">
+            {saving ? "..." : "Guardar"}
           </button>
-          <button onClick={onClose}
-            className="px-2 py-0.5 border text-[10px] rounded">
+          <button onClick={onClose} className="px-2 py-1 border text-[11px] rounded">
             ✕
           </button>
         </div>
@@ -311,27 +333,26 @@ function MatchCard({
   }
 
   return (
-    <button
-      onClick={onClick}
-      disabled={locked && !hasTeams}
-      className={`border rounded p-1.5 text-xs text-left hover:border-blue-400 transition ${
-        !hasTeams ? "bg-gray-50 border-gray-200" : "bg-white"
-      }`}
-      style={{ width: 170, height: matchH }}
-    >
-      <div className="text-[9px] text-gray-400 mb-0.5">Partido {slot.matchNum}</div>
+    <button onClick={onClick} disabled={locked && !hasTeams}
+      className={`w-full border ${border} ${bg} rounded p-1.5 text-xs text-left hover:border-blue-400 transition cursor-pointer disabled:cursor-default`}
+      style={{ height: CARD_H }}>
+      <div className="text-[9px] text-gray-400 leading-tight mb-0.5">Partido {slot.matchNum}</div>
       <div className={`flex items-center gap-1 ${homeWon ? "font-bold" : ""}`}>
-        <span className="text-base w-5">{home.flag}</span>
-        <span className="flex-1 truncate">{home.name}</span>
-        <span className="font-mono w-4 text-right">{slot.predHomeScore ?? "-"}</span>
+        <span className="text-sm w-4 shrink-0">{home.flag}</span>
+        <span className="flex-1 truncate text-[11px]">
+          {hasTeams ? home.name : <span className="text-gray-400 italic">{home.name}</span>}
+        </span>
+        <span className="font-mono w-4 text-right text-[11px]">{slot.predHomeScore ?? "·"}</span>
       </div>
       <div className={`flex items-center gap-1 ${awayWon ? "font-bold" : ""}`}>
-        <span className="text-base w-5">{away.flag}</span>
-        <span className="flex-1 truncate">{away.name}</span>
-        <span className="font-mono w-4 text-right">{slot.predAwayScore ?? "-"}</span>
+        <span className="text-sm w-4 shrink-0">{away.flag}</span>
+        <span className="flex-1 truncate text-[11px]">
+          {hasTeams ? away.name : <span className="text-gray-400 italic">{away.name}</span>}
+        </span>
+        <span className="font-mono w-4 text-right text-[11px]">{slot.predAwayScore ?? "·"}</span>
       </div>
       {(slot.predExtraTime || slot.predPenalties) && (
-        <div className="text-[9px] text-blue-600 mt-0.5">
+        <div className="text-[9px] text-blue-600 mt-0.5 leading-none">
           {slot.predExtraTime ? "ET " : ""}
           {slot.predPenalties ? "PEN" : ""}
         </div>
