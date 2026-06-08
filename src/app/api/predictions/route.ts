@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { isMatchLocked } from "@/lib/scoring";
+import { isTournamentLocked } from "@/lib/config";
 
 // GET: list all of the current user's predictions
 export async function GET() {
@@ -43,8 +43,11 @@ export async function POST(req: NextRequest) {
     const match = await prisma.match.findUnique({ where: { id: matchId } });
     if (!match) return NextResponse.json({ error: "Partido no existe" }, { status: 404 });
 
-    if (isMatchLocked(match.kickoff)) {
-      return NextResponse.json({ error: "Predicciones cerradas para este partido" }, { status: 403 });
+    if (isTournamentLocked()) {
+      return NextResponse.json(
+        { error: "Las predicciones ya están cerradas (cerraron al inicio del Mundial)" },
+        { status: 403 }
+      );
     }
 
     if (!match.homeTeamId || !match.awayTeamId) {

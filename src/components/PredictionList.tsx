@@ -33,17 +33,18 @@ const STAGE_LABELS: Record<string, string> = {
   final: "Final",
 };
 
-function isLocked(kickoffISO: string): boolean {
-  const cutoff = new Date(new Date(kickoffISO).getTime() - 15 * 60 * 1000);
-  return new Date() >= cutoff;
+function isLocked(_kickoffISO: string, globalLocked: boolean): boolean {
+  return globalLocked;
 }
 
 export default function PredictionList({
   matches,
   myPreds,
+  locked: globalLocked,
 }: {
   matches: Match[];
   myPreds: Record<string, Pred>;
+  locked: boolean;
 }) {
   const [filter, setFilter] = useState<string>("all");
   const [preds, setPreds] = useState<Record<string, Pred>>(myPreds);
@@ -52,9 +53,9 @@ export default function PredictionList({
 
   const filtered = useMemo(() => {
     if (filter === "all") return matches;
-    if (filter === "pending") return matches.filter((m) => !preds[m.id] && !isLocked(m.kickoff));
+    if (filter === "pending") return matches.filter((m) => !preds[m.id]);
     if (filter === "done") return matches.filter((m) => preds[m.id]);
-    return matches.filter((m) => m.stage === filter);
+    return matches.filter((m) => m.groupLetter === filter);
   }, [matches, filter, preds]);
 
   async function savePrediction(matchId: string, p: Pred) {
@@ -76,7 +77,8 @@ export default function PredictionList({
     }
   }
 
-  const stages = ["all", "pending", "done", "group", "r32", "r16", "qf", "sf", "final"];
+  const groupLetters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
+  const filters = ["all", "pending", "done", ...groupLetters];
 
   return (
     <div className="space-y-4">
@@ -86,7 +88,7 @@ export default function PredictionList({
         </div>
       )}
       <div className="flex gap-1 overflow-x-auto pb-1">
-        {stages.map((s) => (
+        {filters.map((s) => (
           <button
             key={s}
             onClick={() => setFilter(s)}
@@ -96,7 +98,7 @@ export default function PredictionList({
                 : "bg-white text-gray-700 hover:bg-gray-50"
             }`}
           >
-            {s === "all" ? "Todos" : s === "pending" ? "Pendientes" : s === "done" ? "Hechas" : STAGE_LABELS[s] ?? s}
+            {s === "all" ? "Todos" : s === "pending" ? "Pendientes" : s === "done" ? "Hechas" : `Grupo ${s}`}
           </button>
         ))}
       </div>
@@ -112,6 +114,7 @@ export default function PredictionList({
               pred={preds[m.id]}
               onSave={(p) => savePrediction(m.id, p)}
               saving={savingId === m.id}
+              globalLocked={globalLocked}
             />
           ))
         )}
@@ -125,18 +128,17 @@ function PredictionRow({
   pred,
   onSave,
   saving,
+  globalLocked,
 }: {
   match: Match;
   pred: Pred | undefined;
   onSave: (p: Pred) => void;
   saving: boolean;
+  globalLocked: boolean;
 }) {
   const [home, setHome] = useState<number>(pred?.predHomeScore ?? 0);
   const [away, setAway] = useState<number>(pred?.predAwayScore ?? 0);
-  const [et, setEt] = useState<boolean>(pred?.predExtraTime ?? false);
-  const [pen, setPen] = useState<boolean>(pred?.predPenalties ?? false);
-  const locked = isLocked(match.kickoff);
-  const isKO = match.stage !== "group";
+  const locked = globalLocked;
   const hasResult = match.homeScore != null && match.awayScore != null;
 
   function adjust(side: "home" | "away", delta: number) {
@@ -185,29 +187,7 @@ function PredictionRow({
         </div>
       </div>
 
-      {/* KO extras */}
-      {isKO && (
-        <div className="flex justify-center gap-4 mt-3 text-sm">
-          <label className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={et}
-              onChange={(e) => setEt(e.target.checked)}
-              disabled={locked}
-            />
-            Tiempo extra
-          </label>
-          <label className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={pen}
-              onChange={(e) => setPen(e.target.checked)}
-              disabled={locked}
-            />
-            Penales
-          </label>
-        </div>
-      )}
+      {/* ET/penales eliminados — solo grupos */}
 
       <div className="flex items-center justify-between mt-3">
         <div className="text-xs text-gray-500">
@@ -232,7 +212,7 @@ function PredictionRow({
         </div>
         {!locked && (
           <button
-            onClick={() => onSave({ predHomeScore: home, predAwayScore: away, predExtraTime: et, predPenalties: pen, pointsAwarded: 0 })}
+            onClick={() => onSave({ predHomeScore: home, predAwayScore: away, predExtraTime: false, predPenalties: false, pointsAwarded: 0 })}
             disabled={saving}
             className="px-3 py-1.5 bg-black text-white text-sm rounded hover:opacity-85 disabled:opacity-50"
           >
