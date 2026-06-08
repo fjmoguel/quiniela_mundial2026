@@ -14,7 +14,9 @@ model User {
   isAdmin      Boolean  @default(false)
   createdAt    DateTime @default(now())
 
-  predictions Prediction[]
+  predictions          Prediction[]
+  groupPredictions     GroupPrediction[]
+  knockoutBracketPicks KnockoutBracketPick[]
 }
 
 model Team {
@@ -37,20 +39,20 @@ model Match {
   kickoff     DateTime
   venue       String?
 
-  // For knockout: bracket placeholders like "1A", "2B", "3CDEF", "W73", "L101"
-  homeTeamPlaceholder String?
-  awayTeamPlaceholder String?
-
   homeTeamId String? @db.ObjectId
   awayTeamId String? @db.ObjectId
   homeTeam   Team?   @relation("HomeTeam", fields: [homeTeamId], references: [id])
   awayTeam   Team?   @relation("AwayTeam", fields: [awayTeamId], references: [id])
 
-  homeScore        Int?
+  // Result fields (filled by admin / sync)
+  homeScore        Int?     // marcador en 90 minutos
   awayScore        Int?
+  homeScoreET      Int?     // marcador después de tiempo extra (si aplica)
+  awayScoreET      Int?
+  homePens         Int?     // penales convertidos por home
+  awayPens         Int?     // penales convertidos por away
   wentToExtraTime  Boolean   @default(false)
   wentToPenalties  Boolean   @default(false)
-  winnerTeamId     String?   @db.ObjectId  // sólo si fue a penales — quién ganó
   resultRecordedAt DateTime?
   resultSource     String?   // "manual" | "api" | null
 
@@ -62,11 +64,21 @@ model Prediction {
   userId        String @db.ObjectId
   matchId       String @db.ObjectId
 
-  predHomeScore Int     // marcador en 90 min
-  predAwayScore Int     // marcador en 90 min
+  // Tiempo regular (90 min) — siempre requerido
+  predHomeScore Int
+  predAwayScore Int
+
+  // Tiempo extra — opcional, solo si el usuario predice que va a ET
+  predHomeScoreET Int?
+  predAwayScoreET Int?
+
+  // Penales — opcional, solo si el usuario predice que va a penales
+  predHomePens Int?
+  predAwayPens Int?
+
+  // Flags (auto-derivados de si se llenaron ET/Pens)
   predExtraTime Boolean @default(false)
   predPenalties Boolean @default(false)
-  predWinnerTeamId String? @db.ObjectId  // sólo si predijo empate en regular (knockout)
 
   pointsAwarded Int       @default(0)
   scoredAt      DateTime?
@@ -80,3 +92,30 @@ model Prediction {
   @@unique([userId, matchId])
 }
 
+model GroupPrediction {
+  id          String @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String @db.ObjectId
+  groupLetter String
+
+  firstPlaceTeamId  String @db.ObjectId
+  secondPlaceTeamId String @db.ObjectId
+  thirdPlaceTeamId  String @db.ObjectId
+  fourthPlaceTeamId String @db.ObjectId
+
+  pointsAwarded Int @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupLetter])
+}
+
+model KnockoutBracketPick {
+  id      String @id @default(auto()) @map("_id") @db.ObjectId
+  userId  String @db.ObjectId
+  slotKey String  // "r16" | "qf" | "sf" | "final" | "third" | "champion"
+  teamId  String @db.ObjectId
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, slotKey, teamId])
+}

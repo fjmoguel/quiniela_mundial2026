@@ -23,10 +23,21 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const matchId = String(body.matchId ?? "");
+
     const predHomeScore = Number(body.predHomeScore);
     const predAwayScore = Number(body.predAwayScore);
-    const predExtraTime = Boolean(body.predExtraTime);
-    const predPenalties = Boolean(body.predPenalties);
+
+    // ET scores (optional)
+    const predHomeScoreET =
+      body.predHomeScoreET != null && body.predHomeScoreET !== "" ? Number(body.predHomeScoreET) : null;
+    const predAwayScoreET =
+      body.predAwayScoreET != null && body.predAwayScoreET !== "" ? Number(body.predAwayScoreET) : null;
+
+    // Penalty scores (optional)
+    const predHomePens =
+      body.predHomePens != null && body.predHomePens !== "" ? Number(body.predHomePens) : null;
+    const predAwayPens =
+      body.predAwayPens != null && body.predAwayPens !== "" ? Number(body.predAwayPens) : null;
 
     if (
       !matchId ||
@@ -37,8 +48,18 @@ export async function POST(req: NextRequest) {
       predAwayScore < 0 ||
       predAwayScore > 20
     ) {
-      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+      return NextResponse.json({ error: "Marcador en tiempo regular inválido" }, { status: 400 });
     }
+    // Validate ET scores if provided
+    for (const v of [predHomeScoreET, predAwayScoreET, predHomePens, predAwayPens]) {
+      if (v != null && (!Number.isInteger(v) || v < 0 || v > 20)) {
+        return NextResponse.json({ error: "Marcador ET/Pen inválido" }, { status: 400 });
+      }
+    }
+
+    // Auto-derive flags
+    const predExtraTime = predHomeScoreET != null || predAwayScoreET != null;
+    const predPenalties = predHomePens != null || predAwayPens != null;
 
     const match = await prisma.match.findUnique({ where: { id: matchId } });
     if (!match) return NextResponse.json({ error: "Partido no existe" }, { status: 404 });
@@ -50,7 +71,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // For group matches we need teams assigned; for KO it's OK if they're placeholders
     if (match.stage === "group" && (!match.homeTeamId || !match.awayTeamId)) {
       return NextResponse.json(
         { error: "Este partido aún no tiene equipos asignados" },
@@ -65,15 +85,28 @@ export async function POST(req: NextRequest) {
         matchId,
         predHomeScore,
         predAwayScore,
+        predHomeScoreET,
+        predAwayScoreET,
+        predHomePens,
+        predAwayPens,
         predExtraTime,
         predPenalties,
       },
-      update: { predHomeScore, predAwayScore, predExtraTime, predPenalties },
+      update: {
+        predHomeScore,
+        predAwayScore,
+        predHomeScoreET,
+        predAwayScoreET,
+        predHomePens,
+        predAwayPens,
+        predExtraTime,
+        predPenalties,
+      },
     });
 
     return NextResponse.json({ prediction });
-  } catch (e) {
+  } catch (e: any) {
     console.error("prediction error", e);
-    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+    return NextResponse.json({ error: e.message ?? "Error interno" }, { status: 500 });
   }
 }

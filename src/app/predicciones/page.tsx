@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { isTournamentLocked, TOURNAMENT_LOCK } from "@/lib/config";
 import PredictionList from "@/components/PredictionList";
+import LocalDate from "@/components/LocalDate";
 
 export default async function PrediccionesPage() {
   const user = await requireUser();
@@ -35,10 +36,7 @@ export default async function PrediccionesPage() {
         ) : (
           <div className="mt-3 bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded text-sm">
             Cierra el{" "}
-            {TOURNAMENT_LOCK.toLocaleString(undefined, {
-              dateStyle: "full",
-              timeStyle: "short",
-            })}{" "}
+            <LocalDate iso={TOURNAMENT_LOCK.toISOString()} format="full" />{" "}
             (kickoff del partido inaugural). Después de esa hora, todo se bloquea.
           </div>
         )}

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { TOURNAMENT_LOCK, isTournamentLocked } from "@/lib/config";
 import { getUserTotalPoints } from "@/lib/scoring";
+import LocalDate from "@/components/LocalDate";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -49,7 +50,7 @@ export default async function DashboardPage() {
       {!locked && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm">
           ⏰ <strong>Cierre de quiniela:</strong>{" "}
-          {TOURNAMENT_LOCK.toLocaleString(undefined, { dateStyle: "full", timeStyle: "short" })}
+          <LocalDate iso={TOURNAMENT_LOCK.toISOString()} format="full" />
           <div className="text-xs text-blue-700 mt-1">
             Tienes {myMatchPreds}/72 marcadores de grupos · {myKOPreds}/32 partidos KO
           </div>
@@ -108,12 +109,7 @@ export default async function DashboardPage() {
                   <span className="text-2xl">{m.awayTeam?.flag}</span>
                 </div>
                 <div className="text-right text-xs text-gray-500">
-                  {new Date(m.kickoff).toLocaleString(undefined, {
-                    day: "numeric",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  <LocalDate iso={m.kickoff.toISOString()} />
                 </div>
               </div>
             ))

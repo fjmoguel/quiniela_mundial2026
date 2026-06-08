@@ -10,6 +10,10 @@ export type BracketSlotResolved = {
   awayLabel: string;
   predHomeScore: number | null;
   predAwayScore: number | null;
+  predHomeScoreET: number | null;
+  predAwayScoreET: number | null;
+  predHomePens: number | null;
+  predAwayPens: number | null;
   predExtraTime: boolean;
   predPenalties: boolean;
   predWinnerTeamId: string | null;
@@ -224,6 +228,10 @@ export async function buildUserBracket(userId: string): Promise<BracketSlotResol
       awayLabel: awayRes.label,
       predHomeScore: pred?.predHomeScore ?? null,
       predAwayScore: pred?.predAwayScore ?? null,
+      predHomeScoreET: (pred as any)?.predHomeScoreET ?? null,
+      predAwayScoreET: (pred as any)?.predAwayScoreET ?? null,
+      predHomePens: (pred as any)?.predHomePens ?? null,
+      predAwayPens: (pred as any)?.predAwayPens ?? null,
       predExtraTime: pred?.predExtraTime ?? false,
       predPenalties: pred?.predPenalties ?? false,
       predWinnerTeamId: winnerId,

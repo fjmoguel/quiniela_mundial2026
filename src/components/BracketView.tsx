@@ -12,6 +12,10 @@ type BracketSlot = {
   awayLabel: string;
   predHomeScore: number | null;
   predAwayScore: number | null;
+  predHomeScoreET: number | null;
+  predAwayScoreET: number | null;
+  predHomePens: number | null;
+  predAwayPens: number | null;
   predExtraTime: boolean;
   predPenalties: boolean;
   predWinnerTeamId: string | null;
@@ -20,11 +24,10 @@ type BracketSlot = {
   awayTeam: Team | null;
 };
 
-// Bracket layout constants
 const CARD_H = 70;
-const CARD_W = 210;
-const COL_GAP = 40; // horizontal gap between rounds
-const TOTAL_H = 16 * CARD_H + 15 * 10; // total height to fit 16 R32 cards
+const CARD_W = 220;
+const COL_GAP = 50;
+const TOTAL_H = 16 * CARD_H + 15 * 10;
 
 export default function BracketView({
   bracket,
@@ -44,11 +47,11 @@ export default function BracketView({
 
   async function saveSlot(slot: BracketSlot) {
     if (!slot.matchId) {
-      setFeedback("Falta llenar tus picks de grupos primero");
+      setFeedback("Faltan tus picks de grupos");
       return;
     }
     if (slot.predHomeScore == null || slot.predAwayScore == null) {
-      setFeedback("Mete un marcador");
+      setFeedback("Mete marcador en tiempo regular");
       return;
     }
     setSavingId(slot.matchNum);
@@ -60,8 +63,10 @@ export default function BracketView({
           matchId: slot.matchId,
           predHomeScore: slot.predHomeScore,
           predAwayScore: slot.predAwayScore,
-          predExtraTime: slot.predExtraTime,
-          predPenalties: slot.predPenalties,
+          predHomeScoreET: slot.predHomeScoreET,
+          predAwayScoreET: slot.predAwayScoreET,
+          predHomePens: slot.predHomePens,
+          predAwayPens: slot.predAwayPens,
         }),
       });
       const data = await r.json();
@@ -83,22 +88,20 @@ export default function BracketView({
   const finalSlot = slots.find((s) => s.stage === "final");
   const thirdSlot = slots.find((s) => s.stage === "third_place");
 
-  // Position of each card's center per round
   function getCenterY(round: "r32" | "r16" | "qf" | "sf" | "final", idx: number): number {
     const counts = { r32: 16, r16: 8, qf: 4, sf: 2, final: 1 };
     const n = counts[round];
     return (TOTAL_H * (idx + 0.5)) / n;
   }
 
-  // Width of one round (card + connector area)
   const ROUND_W = CARD_W + COL_GAP;
-  const totalWidth = ROUND_W * 5 + CARD_W + 60; // 5 rounds + final card + padding for 3rd place
+  const totalWidth = ROUND_W * 5 + CARD_W + 60;
 
   return (
     <div className="space-y-3">
       {feedback && (
         <div
-          className={`sticky top-2 z-20 px-3 py-2 rounded text-sm ${
+          className={`sticky top-2 z-30 px-3 py-2 rounded text-sm shadow ${
             feedback.startsWith("Error") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
           }`}
         >
@@ -125,13 +128,12 @@ export default function BracketView({
             </div>
           ))}
 
-          {/* SVG layer for connector lines */}
+          {/* SVG connectors */}
           <svg
             style={{ position: "absolute", left: 0, top: 25, pointerEvents: "none" }}
             width={totalWidth}
             height={TOTAL_H}
           >
-            {/* R32 → R16 connectors */}
             {Array.from({ length: 8 }).map((_, i) => {
               const y1 = getCenterY("r32", i * 2);
               const y2 = getCenterY("r32", i * 2 + 1);
@@ -145,7 +147,6 @@ export default function BracketView({
                 </g>
               );
             })}
-            {/* R16 → QF connectors */}
             {Array.from({ length: 4 }).map((_, i) => {
               const y1 = getCenterY("r16", i * 2);
               const y2 = getCenterY("r16", i * 2 + 1);
@@ -159,7 +160,6 @@ export default function BracketView({
                 </g>
               );
             })}
-            {/* QF → SF connectors */}
             {Array.from({ length: 2 }).map((_, i) => {
               const y1 = getCenterY("qf", i * 2);
               const y2 = getCenterY("qf", i * 2 + 1);
@@ -173,97 +173,90 @@ export default function BracketView({
                 </g>
               );
             })}
-            {/* SF → Final connectors */}
-            {Array.from({ length: 1 }).map((_, i) => {
+            {(() => {
               const y1 = getCenterY("sf", 0);
               const y2 = getCenterY("sf", 1);
               const yMid = getCenterY("final", 0);
               const x1 = ROUND_W * 3 + CARD_W;
               const x2 = ROUND_W * 4;
               return (
-                <g key={`sf-final-${i}`} stroke="#facc15" strokeWidth="2" fill="none">
+                <g stroke="#facc15" strokeWidth="2" fill="none">
                   <path d={`M ${x1} ${y1} H ${(x1 + x2) / 2} V ${yMid} H ${x2}`} />
                   <path d={`M ${x1} ${y2} H ${(x1 + x2) / 2} V ${yMid}`} />
                 </g>
               );
-            })}
+            })()}
           </svg>
 
           {/* Cards */}
           {r32.map((m, i) => (
-            <PositionedCard key={m.matchNum} slot={m} top={getCenterY("r32", i) - CARD_H / 2 + 25}
-              left={0} locked={locked} editing={editingMatchNum === m.matchNum}
+            <Positioned key={m.matchNum} slot={m} top={getCenterY("r32", i) - CARD_H / 2 + 25} left={0}
+              locked={locked} editing={editingMatchNum === m.matchNum}
               onClick={() => setEditingMatchNum(m.matchNum)}
               onClose={() => setEditingMatchNum(null)}
               update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
               saving={savingId === m.matchNum} />
           ))}
           {r16.map((m, i) => (
-            <PositionedCard key={m.matchNum} slot={m} top={getCenterY("r16", i) - CARD_H / 2 + 25}
-              left={ROUND_W} locked={locked} editing={editingMatchNum === m.matchNum}
+            <Positioned key={m.matchNum} slot={m} top={getCenterY("r16", i) - CARD_H / 2 + 25} left={ROUND_W}
+              locked={locked} editing={editingMatchNum === m.matchNum}
               onClick={() => setEditingMatchNum(m.matchNum)}
               onClose={() => setEditingMatchNum(null)}
               update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
               saving={savingId === m.matchNum} />
           ))}
           {qf.map((m, i) => (
-            <PositionedCard key={m.matchNum} slot={m} top={getCenterY("qf", i) - CARD_H / 2 + 25}
-              left={ROUND_W * 2} locked={locked} editing={editingMatchNum === m.matchNum}
+            <Positioned key={m.matchNum} slot={m} top={getCenterY("qf", i) - CARD_H / 2 + 25} left={ROUND_W * 2}
+              locked={locked} editing={editingMatchNum === m.matchNum}
               onClick={() => setEditingMatchNum(m.matchNum)}
               onClose={() => setEditingMatchNum(null)}
               update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
               saving={savingId === m.matchNum} />
           ))}
           {sf.map((m, i) => (
-            <PositionedCard key={m.matchNum} slot={m} top={getCenterY("sf", i) - CARD_H / 2 + 25}
-              left={ROUND_W * 3} locked={locked} editing={editingMatchNum === m.matchNum}
+            <Positioned key={m.matchNum} slot={m} top={getCenterY("sf", i) - CARD_H / 2 + 25} left={ROUND_W * 3}
+              locked={locked} editing={editingMatchNum === m.matchNum}
               onClick={() => setEditingMatchNum(m.matchNum)}
               onClose={() => setEditingMatchNum(null)}
               update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
               saving={savingId === m.matchNum} />
           ))}
           {finalSlot && (
-            <PositionedCard slot={finalSlot} top={getCenterY("final", 0) - CARD_H / 2 + 25}
-              left={ROUND_W * 4} locked={locked} editing={editingMatchNum === finalSlot.matchNum}
+            <Positioned slot={finalSlot} top={getCenterY("final", 0) - CARD_H / 2 + 25} left={ROUND_W * 4}
+              locked={locked} editing={editingMatchNum === finalSlot.matchNum}
               onClick={() => setEditingMatchNum(finalSlot.matchNum)}
               onClose={() => setEditingMatchNum(null)}
               update={(p) => updateSlot(finalSlot.matchNum, p)} save={() => saveSlot(finalSlot)}
-              saving={savingId === finalSlot.matchNum}
-              isFinal />
+              saving={savingId === finalSlot.matchNum} isFinal />
           )}
-          {/* 3rd place — below final, separately */}
           {thirdSlot && (
-            <div style={{ position: "absolute", left: ROUND_W * 4, top: TOTAL_H - CARD_H - 20 + 25, width: CARD_W }}>
+            <div style={{ position: "absolute", left: ROUND_W * 4, top: TOTAL_H - CARD_H + 25, width: CARD_W }}>
               <div className="text-[11px] font-semibold text-center mb-1 text-amber-700">
                 🥉 Tercer lugar
               </div>
-              <PositionedCard slot={thirdSlot} top={0} left={0}
-                locked={locked} editing={editingMatchNum === thirdSlot.matchNum}
+              <Card slot={thirdSlot} locked={locked} editing={editingMatchNum === thirdSlot.matchNum}
                 onClick={() => setEditingMatchNum(thirdSlot.matchNum)}
                 onClose={() => setEditingMatchNum(null)}
                 update={(p) => updateSlot(thirdSlot.matchNum, p)} save={() => saveSlot(thirdSlot)}
-                saving={savingId === thirdSlot.matchNum} inline />
+                saving={savingId === thirdSlot.matchNum} />
             </div>
           )}
         </div>
       </div>
 
-      <p className="text-xs text-gray-500 px-1">
-        💡 Click en cualquier partido para meter marcador. El bracket se arma con tus picks
-        de grupos.
-      </p>
+      <div className="text-xs text-gray-500 px-1 space-y-1">
+        <p>💡 Click en cualquier partido para meter marcadores. El bracket se arma con tus picks de grupos.</p>
+        <p>📝 Llena <strong>tiempo regular</strong> (siempre). Solo llena <strong>ET</strong> si crees que va a tiempo extra, y <strong>Pen</strong> si crees que va a penales.</p>
+      </div>
     </div>
   );
 }
 
-function PositionedCard(props: any) {
-  const { slot, top, left, locked, editing, onClick, onClose, update, save, saving, isFinal, inline } = props;
-  const style: any = inline ? {} : { position: "absolute", top, left, width: CARD_W };
+function Positioned(props: any) {
+  const { slot, top, left, ...rest } = props;
   return (
-    <div style={style}>
-      <Card slot={slot} locked={locked} editing={editing}
-        onClick={onClick} onClose={onClose}
-        update={update} save={save} saving={saving} isFinal={isFinal} />
+    <div style={{ position: "absolute", top, left, width: CARD_W }}>
+      <Card slot={slot} {...rest} />
     </div>
   );
 }
@@ -289,45 +282,83 @@ function Card({
 
   if (editing) {
     return (
-      <div className={`border-2 border-blue-400 bg-blue-50 rounded p-2 text-xs`} style={{ height: CARD_H + 60 }}>
-        <div className="text-[10px] text-gray-500 mb-1">Partido {slot.matchNum}</div>
-        <div className="space-y-1">
-          <div className="flex items-center gap-1">
-            <span className="text-base w-5">{home.flag || "·"}</span>
-            <span className="flex-1 truncate text-[11px]">{home.name}</span>
-            <input type="number" min={0} max={20} value={slot.predHomeScore ?? ""}
-              onChange={(e) => update({ predHomeScore: e.target.value === "" ? null : parseInt(e.target.value) })}
-              className="w-9 px-1 py-0.5 border rounded text-center" />
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-base w-5">{away.flag || "·"}</span>
-            <span className="flex-1 truncate text-[11px]">{away.name}</span>
-            <input type="number" min={0} max={20} value={slot.predAwayScore ?? ""}
-              onChange={(e) => update({ predAwayScore: e.target.value === "" ? null : parseInt(e.target.value) })}
-              className="w-9 px-1 py-0.5 border rounded text-center" />
-          </div>
+      <div className="border-2 border-blue-400 bg-blue-50 rounded p-2 text-xs shadow-lg" style={{ width: CARD_W + 20, marginLeft: -10 }}>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] text-gray-500 font-medium">Partido {slot.matchNum}</span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700">✕</button>
         </div>
-        <div className="flex gap-3 mt-1.5 text-[10px]">
-          <label className="flex items-center gap-1">
-            <input type="checkbox" checked={slot.predExtraTime}
-              onChange={(e) => update({ predExtraTime: e.target.checked })} />
-            ET +5
-          </label>
-          <label className="flex items-center gap-1">
-            <input type="checkbox" checked={slot.predPenalties}
-              onChange={(e) => update({ predPenalties: e.target.checked })} />
-            Pen +8
-          </label>
+
+        {/* Equipos */}
+        <div className="flex items-center gap-1 mb-2 text-[11px]">
+          <span className="text-sm w-5">{home.flag || "·"}</span>
+          <span className="flex-1 truncate font-medium">{home.name}</span>
         </div>
-        <div className="flex gap-1 mt-1.5">
-          <button onClick={save} disabled={saving || locked}
-            className="flex-1 px-2 py-1 bg-black text-white text-[11px] rounded disabled:opacity-50">
-            {saving ? "..." : "Guardar"}
-          </button>
-          <button onClick={onClose} className="px-2 py-1 border text-[11px] rounded">
-            ✕
-          </button>
+        <div className="flex items-center gap-1 mb-2 text-[11px]">
+          <span className="text-sm w-5">{away.flag || "·"}</span>
+          <span className="flex-1 truncate font-medium">{away.name}</span>
         </div>
+
+        {/* Tabla de 3 filas: Regular / ET / Pen */}
+        <table className="w-full text-[10px] mb-2">
+          <thead>
+            <tr className="text-gray-500">
+              <th className="text-left font-normal">90'</th>
+              <th className="text-left font-normal">ET</th>
+              <th className="text-left font-normal">Pen</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <input type="number" min={0} max={20} value={slot.predHomeScore ?? ""}
+                  onChange={(e) => update({ predHomeScore: e.target.value === "" ? null : parseInt(e.target.value) })}
+                  placeholder="-"
+                  className="w-12 px-1 py-0.5 border rounded text-center" />
+              </td>
+              <td>
+                <input type="number" min={0} max={20} value={slot.predHomeScoreET ?? ""}
+                  onChange={(e) => update({ predHomeScoreET: e.target.value === "" ? null : parseInt(e.target.value) })}
+                  placeholder="-"
+                  className="w-12 px-1 py-0.5 border rounded text-center" />
+              </td>
+              <td>
+                <input type="number" min={0} max={20} value={slot.predHomePens ?? ""}
+                  onChange={(e) => update({ predHomePens: e.target.value === "" ? null : parseInt(e.target.value) })}
+                  placeholder="-"
+                  className="w-12 px-1 py-0.5 border rounded text-center" />
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <input type="number" min={0} max={20} value={slot.predAwayScore ?? ""}
+                  onChange={(e) => update({ predAwayScore: e.target.value === "" ? null : parseInt(e.target.value) })}
+                  placeholder="-"
+                  className="w-12 px-1 py-0.5 border rounded text-center" />
+              </td>
+              <td>
+                <input type="number" min={0} max={20} value={slot.predAwayScoreET ?? ""}
+                  onChange={(e) => update({ predAwayScoreET: e.target.value === "" ? null : parseInt(e.target.value) })}
+                  placeholder="-"
+                  className="w-12 px-1 py-0.5 border rounded text-center" />
+              </td>
+              <td>
+                <input type="number" min={0} max={20} value={slot.predAwayPens ?? ""}
+                  onChange={(e) => update({ predAwayPens: e.target.value === "" ? null : parseInt(e.target.value) })}
+                  placeholder="-"
+                  className="w-12 px-1 py-0.5 border rounded text-center" />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div className="text-[9px] text-gray-500 mb-2">
+          90' = tiempo regular · ET = tras tiempo extra · Pen = penales (5/4 etc)
+        </div>
+
+        <button onClick={save} disabled={saving || locked}
+          className="w-full px-2 py-1.5 bg-black text-white text-[11px] rounded disabled:opacity-50 font-medium">
+          {saving ? "Guardando..." : "Guardar"}
+        </button>
       </div>
     );
   }
@@ -353,8 +384,13 @@ function Card({
       </div>
       {(slot.predExtraTime || slot.predPenalties) && (
         <div className="text-[9px] text-blue-600 mt-0.5 leading-none">
-          {slot.predExtraTime ? "ET " : ""}
-          {slot.predPenalties ? "PEN" : ""}
+          {slot.predExtraTime && slot.predHomeScoreET != null
+            ? `ET ${slot.predHomeScoreET}-${slot.predAwayScoreET}`
+            : ""}
+          {slot.predExtraTime && slot.predPenalties ? " · " : ""}
+          {slot.predPenalties && slot.predHomePens != null
+            ? `Pen ${slot.predHomePens}-${slot.predAwayPens}`
+            : ""}
         </div>
       )}
     </button>

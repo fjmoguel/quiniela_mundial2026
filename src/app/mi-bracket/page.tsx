@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { isTournamentLocked, TOURNAMENT_LOCK } from "@/lib/config";
 import { buildUserBracket } from "@/lib/bracket";
 import BracketView from "@/components/BracketView";
+import LocalDate from "@/components/LocalDate";
 
 export default async function MiBracketPage() {
   const user = await requireUser();
@@ -40,10 +41,7 @@ export default async function MiBracketPage() {
         ) : (
           <div className="mt-3 bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded text-sm">
             Cierra el{" "}
-            {TOURNAMENT_LOCK.toLocaleString(undefined, {
-              dateStyle: "full",
-              timeStyle: "short",
-            })}{" "}
+            <LocalDate iso={TOURNAMENT_LOCK.toISOString()} format="full" />{" "}
             (kickoff inaugural).
           </div>
         )}
