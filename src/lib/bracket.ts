@@ -107,6 +107,7 @@ export function rankBestThirds(standings: Record<string, GroupRow[]>): GroupRow[
 }
 
 export function assignThirdsToSlots(bestThirds: GroupRow[]): Record<number, string> {
+  // Slots that need thirds, with their group constraints (FIFA Annex C)
   const thirdSlots = [
     { matchNum: 74, allowed: ["A", "B", "C", "D", "F"] },
     { matchNum: 77, allowed: ["C", "D", "F", "G", "H"] },
@@ -118,19 +119,52 @@ export function assignThirdsToSlots(bestThirds: GroupRow[]): Record<number, stri
     { matchNum: 87, allowed: ["D", "E", "I", "J", "L"] },
   ];
 
-  const assignment: Record<number, string> = {};
-  const used = new Set<string>();
+  // Backtracking: try every possible assignment that respects constraints.
+  // bestThirds is already ranked best-to-worst, so we try them in that order
+  // to prefer assignments where higher-ranked thirds go to earlier slots.
+  const result: Record<number, string> = {};
 
-  for (const slot of thirdSlots) {
-    const candidate = bestThirds.find(
-      (t) => !used.has(t.teamId) && slot.allowed.includes(t.groupLetter)
-    );
-    if (candidate) {
-      assignment[slot.matchNum] = candidate.teamId;
-      used.add(candidate.teamId);
+  function backtrack(slotIdx: number, used: Set<string>): boolean {
+    if (slotIdx >= thirdSlots.length) return true;
+    const slot = thirdSlots[slotIdx];
+    for (const t of bestThirds) {
+      if (used.has(t.teamId)) continue;
+      if (!slot.allowed.includes(t.groupLetter)) continue;
+      result[slot.matchNum] = t.teamId;
+      used.add(t.teamId);
+      if (backtrack(slotIdx + 1, used)) return true;
+      // unwind: this branch didn't work
+      delete result[slot.matchNum];
+      used.delete(t.teamId);
+    }
+    return false;
+  }
+
+  const solved = backtrack(0, new Set());
+
+  // Fallback: if no perfect assignment found, fill remaining slots with any
+  // available third (even if constraints don't perfectly match — better than
+  // leaving the bracket empty)
+  if (!solved) {
+    console.warn("⚠️ No perfect Annex C assignment found, using fallback");
+    const used = new Set(Object.values(result));
+    for (const slot of thirdSlots) {
+      if (result[slot.matchNum]) continue;
+      // Pick any unused third, preferring ones whose group is allowed
+      let candidate = bestThirds.find(
+        (t) => !used.has(t.teamId) && slot.allowed.includes(t.groupLetter)
+      );
+      if (!candidate) {
+        candidate = bestThirds.find((t) => !used.has(t.teamId));
+      }
+      if (candidate) {
+        result[slot.matchNum] = candidate.teamId;
+        used.add(candidate.teamId);
+      }
     }
   }
-  return assignment;
+
+  return result;
 }
 
 export async function buildUserBracket(userId: string): Promise<BracketSlotResolved[]> {
