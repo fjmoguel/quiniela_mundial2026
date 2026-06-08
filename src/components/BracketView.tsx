@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Team = { id: string; name: string; flag: string };
 
@@ -28,6 +28,9 @@ const CARD_H = 70;
 const CARD_W = 220;
 const COL_GAP = 50;
 const TOTAL_H = 16 * CARD_H + 15 * 10;
+const DEBOUNCE_MS = 700;
+
+type SaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 
 export default function BracketView({
   bracket,
@@ -38,23 +41,37 @@ export default function BracketView({
 }) {
   const [slots, setSlots] = useState<BracketSlot[]>(bracket);
   const [editingMatchNum, setEditingMatchNum] = useState<number | null>(null);
-  const [savingId, setSavingId] = useState<number | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [status, setStatus] = useState<SaveStatus>("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // pending changes per matchNum, with timer
+  const timersRef = useRef<Map<number, NodeJS.Timeout>>(new Map());
+  const pendingRef = useRef<Map<number, BracketSlot>>(new Map());
 
   function updateSlot(matchNum: number, patch: Partial<BracketSlot>) {
-    setSlots((prev) => prev.map((s) => (s.matchNum === matchNum ? { ...s, ...patch } : s)));
+    setSlots((prev) => {
+      const next = prev.map((s) => (s.matchNum === matchNum ? { ...s, ...patch } : s));
+      // queue auto-save for this match
+      const updated = next.find((s) => s.matchNum === matchNum);
+      if (updated && updated.matchId && updated.predHomeScore != null && updated.predAwayScore != null) {
+        pendingRef.current.set(matchNum, updated);
+        setStatus("pending");
+        // reset timer
+        const existing = timersRef.current.get(matchNum);
+        if (existing) clearTimeout(existing);
+        const t = setTimeout(() => flushSave(matchNum), DEBOUNCE_MS);
+        timersRef.current.set(matchNum, t);
+      }
+      return next;
+    });
   }
 
-  async function saveSlot(slot: BracketSlot) {
-    if (!slot.matchId) {
-      setFeedback("Faltan tus picks de grupos");
-      return;
-    }
-    if (slot.predHomeScore == null || slot.predAwayScore == null) {
-      setFeedback("Mete marcador en tiempo regular");
-      return;
-    }
-    setSavingId(slot.matchNum);
+  async function flushSave(matchNum: number) {
+    const slot = pendingRef.current.get(matchNum);
+    if (!slot || !slot.matchId) return;
+    pendingRef.current.delete(matchNum);
+    timersRef.current.delete(matchNum);
+    setStatus("saving");
     try {
       const r = await fetch("/api/predictions", {
         method: "POST",
@@ -71,15 +88,22 @@ export default function BracketView({
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Error");
-      setFeedback(`✓ Guardado partido ${slot.matchNum}`);
-      setTimeout(() => setFeedback(null), 2000);
-      setEditingMatchNum(null);
+      setStatus("saved");
+      setErrorMsg(null);
+      // Reset to idle after 2s
+      setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 2000);
     } catch (e: any) {
-      setFeedback("Error: " + e.message);
-    } finally {
-      setSavingId(null);
+      setStatus("error");
+      setErrorMsg(e.message ?? "Error al guardar");
     }
   }
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   const r32 = slots.filter((s) => s.stage === "r32").sort((a, b) => a.matchNum - b.matchNum);
   const r16 = slots.filter((s) => s.stage === "r16").sort((a, b) => a.matchNum - b.matchNum);
@@ -98,20 +122,11 @@ export default function BracketView({
   const totalWidth = ROUND_W * 5 + CARD_W + 60;
 
   return (
-    <div className="space-y-3">
-      {feedback && (
-        <div
-          className={`sticky top-2 z-30 px-3 py-2 rounded text-sm shadow ${
-            feedback.startsWith("Error") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
-          }`}
-        >
-          {feedback}
-        </div>
-      )}
+    <div className="space-y-3 relative">
+      <SaveIndicator status={status} errorMsg={errorMsg} />
 
       <div className="overflow-x-auto bg-white border rounded-lg p-4">
         <div style={{ position: "relative", width: totalWidth, height: TOTAL_H + 40 }}>
-          {/* Column headers */}
           {["Dieciseisavos", "Octavos", "Cuartos", "Semis", "Final"].map((title, i) => (
             <div
               key={title}
@@ -128,7 +143,6 @@ export default function BracketView({
             </div>
           ))}
 
-          {/* SVG connectors */}
           <svg
             style={{ position: "absolute", left: 0, top: 25, pointerEvents: "none" }}
             width={totalWidth}
@@ -188,46 +202,40 @@ export default function BracketView({
             })()}
           </svg>
 
-          {/* Cards */}
           {r32.map((m, i) => (
             <Positioned key={m.matchNum} slot={m} top={getCenterY("r32", i) - CARD_H / 2 + 25} left={0}
               locked={locked} editing={editingMatchNum === m.matchNum}
               onClick={() => setEditingMatchNum(m.matchNum)}
               onClose={() => setEditingMatchNum(null)}
-              update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
-              saving={savingId === m.matchNum} />
+              update={(p: any) => updateSlot(m.matchNum, p)} />
           ))}
           {r16.map((m, i) => (
             <Positioned key={m.matchNum} slot={m} top={getCenterY("r16", i) - CARD_H / 2 + 25} left={ROUND_W}
               locked={locked} editing={editingMatchNum === m.matchNum}
               onClick={() => setEditingMatchNum(m.matchNum)}
               onClose={() => setEditingMatchNum(null)}
-              update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
-              saving={savingId === m.matchNum} />
+              update={(p: any) => updateSlot(m.matchNum, p)} />
           ))}
           {qf.map((m, i) => (
             <Positioned key={m.matchNum} slot={m} top={getCenterY("qf", i) - CARD_H / 2 + 25} left={ROUND_W * 2}
               locked={locked} editing={editingMatchNum === m.matchNum}
               onClick={() => setEditingMatchNum(m.matchNum)}
               onClose={() => setEditingMatchNum(null)}
-              update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
-              saving={savingId === m.matchNum} />
+              update={(p: any) => updateSlot(m.matchNum, p)} />
           ))}
           {sf.map((m, i) => (
             <Positioned key={m.matchNum} slot={m} top={getCenterY("sf", i) - CARD_H / 2 + 25} left={ROUND_W * 3}
               locked={locked} editing={editingMatchNum === m.matchNum}
               onClick={() => setEditingMatchNum(m.matchNum)}
               onClose={() => setEditingMatchNum(null)}
-              update={(p) => updateSlot(m.matchNum, p)} save={() => saveSlot(m)}
-              saving={savingId === m.matchNum} />
+              update={(p: any) => updateSlot(m.matchNum, p)} />
           ))}
           {finalSlot && (
             <Positioned slot={finalSlot} top={getCenterY("final", 0) - CARD_H / 2 + 25} left={ROUND_W * 4}
               locked={locked} editing={editingMatchNum === finalSlot.matchNum}
               onClick={() => setEditingMatchNum(finalSlot.matchNum)}
               onClose={() => setEditingMatchNum(null)}
-              update={(p) => updateSlot(finalSlot.matchNum, p)} save={() => saveSlot(finalSlot)}
-              saving={savingId === finalSlot.matchNum} isFinal />
+              update={(p: any) => updateSlot(finalSlot.matchNum, p)} isFinal />
           )}
           {thirdSlot && (
             <div style={{ position: "absolute", left: ROUND_W * 4, top: TOTAL_H - CARD_H + 25, width: CARD_W }}>
@@ -237,24 +245,46 @@ export default function BracketView({
               <Card slot={thirdSlot} locked={locked} editing={editingMatchNum === thirdSlot.matchNum}
                 onClick={() => setEditingMatchNum(thirdSlot.matchNum)}
                 onClose={() => setEditingMatchNum(null)}
-                update={(p) => updateSlot(thirdSlot.matchNum, p)} save={() => saveSlot(thirdSlot)}
-                saving={savingId === thirdSlot.matchNum} />
+                update={(p: any) => updateSlot(thirdSlot.matchNum, p)} />
             </div>
           )}
         </div>
       </div>
 
       <div className="text-xs text-gray-500 px-1 space-y-1">
-        <p>💡 Click en cualquier partido para meter marcadores. El bracket se arma con tus picks de grupos.</p>
+        <p>💡 Click en cualquier partido para meter marcadores. Los cambios se <strong>guardan automáticamente</strong>.</p>
         <p>📝 Llena <strong>tiempo regular</strong> (siempre). Solo llena <strong>ET</strong> si crees que va a tiempo extra, y <strong>Pen</strong> si crees que va a penales.</p>
       </div>
     </div>
   );
 }
 
+function SaveIndicator({ status, errorMsg }: { status: SaveStatus; errorMsg: string | null }) {
+  if (status === "idle") return null;
+  let bg = "bg-gray-100 text-gray-700";
+  let text = "";
+  if (status === "pending") {
+    bg = "bg-gray-100 text-gray-600";
+    text = "● Cambios sin guardar...";
+  } else if (status === "saving") {
+    bg = "bg-blue-50 text-blue-700";
+    text = "⟳ Guardando...";
+  } else if (status === "saved") {
+    bg = "bg-green-50 text-green-700";
+    text = "✓ Guardado";
+  } else if (status === "error") {
+    bg = "bg-red-50 text-red-700";
+    text = `✕ Error: ${errorMsg ?? "no se pudo guardar"}`;
+  }
+  return (
+    <div className={`fixed top-20 right-4 z-50 px-3 py-1.5 rounded-full text-xs font-medium shadow-md ${bg}`}>
+      {text}
+    </div>
+  );
+}
+
 function Positioned(props: any) {
   const { slot, top, left, editing, ...rest } = props;
-  // When editing, raise z-index so the expanded card floats above neighbors
   return (
     <div
       style={{
@@ -277,8 +307,6 @@ function Card({
   onClick,
   onClose,
   update,
-  save,
-  saving,
   isFinal,
 }: any) {
   const hasTeams = !!(slot.homeTeamId && slot.awayTeamId);
@@ -291,13 +319,12 @@ function Card({
 
   if (editing) {
     return (
-      <div className="border-2 border-blue-400 bg-blue-50 rounded p-2 text-xs shadow-lg" style={{ width: CARD_W + 20, marginLeft: -10 }}>
+      <div className="border-2 border-blue-400 bg-blue-50 rounded p-2 text-xs shadow-xl" style={{ width: CARD_W + 20, marginLeft: -10 }}>
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[10px] text-gray-500 font-medium">Partido {slot.matchNum}</span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700">✕</button>
         </div>
 
-        {/* Equipos */}
         <div className="flex items-center gap-1 mb-2 text-[11px]">
           <span className="text-sm w-5">{home.flag || "·"}</span>
           <span className="flex-1 truncate font-medium">{home.name}</span>
@@ -307,7 +334,6 @@ function Card({
           <span className="flex-1 truncate font-medium">{away.name}</span>
         </div>
 
-        {/* Tabla de 3 filas: Regular / ET / Pen */}
         <table className="w-full text-[10px] mb-2">
           <thead>
             <tr className="text-gray-500">
@@ -321,53 +347,48 @@ function Card({
               <td>
                 <input type="number" min={0} max={20} value={slot.predHomeScore ?? ""}
                   onChange={(e) => update({ predHomeScore: e.target.value === "" ? null : parseInt(e.target.value) })}
-                  placeholder="-"
-                  className="w-12 px-1 py-0.5 border rounded text-center" />
+                  placeholder="-" disabled={locked}
+                  className="w-12 px-1 py-0.5 border rounded text-center disabled:bg-gray-100" />
               </td>
               <td>
                 <input type="number" min={0} max={20} value={slot.predHomeScoreET ?? ""}
                   onChange={(e) => update({ predHomeScoreET: e.target.value === "" ? null : parseInt(e.target.value) })}
-                  placeholder="-"
-                  className="w-12 px-1 py-0.5 border rounded text-center" />
+                  placeholder="-" disabled={locked}
+                  className="w-12 px-1 py-0.5 border rounded text-center disabled:bg-gray-100" />
               </td>
               <td>
                 <input type="number" min={0} max={20} value={slot.predHomePens ?? ""}
                   onChange={(e) => update({ predHomePens: e.target.value === "" ? null : parseInt(e.target.value) })}
-                  placeholder="-"
-                  className="w-12 px-1 py-0.5 border rounded text-center" />
+                  placeholder="-" disabled={locked}
+                  className="w-12 px-1 py-0.5 border rounded text-center disabled:bg-gray-100" />
               </td>
             </tr>
             <tr>
               <td>
                 <input type="number" min={0} max={20} value={slot.predAwayScore ?? ""}
                   onChange={(e) => update({ predAwayScore: e.target.value === "" ? null : parseInt(e.target.value) })}
-                  placeholder="-"
-                  className="w-12 px-1 py-0.5 border rounded text-center" />
+                  placeholder="-" disabled={locked}
+                  className="w-12 px-1 py-0.5 border rounded text-center disabled:bg-gray-100" />
               </td>
               <td>
                 <input type="number" min={0} max={20} value={slot.predAwayScoreET ?? ""}
                   onChange={(e) => update({ predAwayScoreET: e.target.value === "" ? null : parseInt(e.target.value) })}
-                  placeholder="-"
-                  className="w-12 px-1 py-0.5 border rounded text-center" />
+                  placeholder="-" disabled={locked}
+                  className="w-12 px-1 py-0.5 border rounded text-center disabled:bg-gray-100" />
               </td>
               <td>
                 <input type="number" min={0} max={20} value={slot.predAwayPens ?? ""}
                   onChange={(e) => update({ predAwayPens: e.target.value === "" ? null : parseInt(e.target.value) })}
-                  placeholder="-"
-                  className="w-12 px-1 py-0.5 border rounded text-center" />
+                  placeholder="-" disabled={locked}
+                  className="w-12 px-1 py-0.5 border rounded text-center disabled:bg-gray-100" />
               </td>
             </tr>
           </tbody>
         </table>
 
-        <div className="text-[9px] text-gray-500 mb-2">
-          90' = tiempo regular · ET = tras tiempo extra · Pen = penales (5/4 etc)
+        <div className="text-[9px] text-gray-500">
+          90' = tiempo regular · ET = tras tiempo extra · Pen = penales
         </div>
-
-        <button onClick={save} disabled={saving || locked}
-          className="w-full px-2 py-1.5 bg-black text-white text-[11px] rounded disabled:opacity-50 font-medium">
-          {saving ? "Guardando..." : "Guardar"}
-        </button>
       </div>
     );
   }
