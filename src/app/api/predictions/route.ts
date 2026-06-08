@@ -50,7 +50,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!match.homeTeamId || !match.awayTeamId) {
+    // For group matches we need teams assigned; for KO it's OK if they're placeholders
+    if (match.stage === "group" && (!match.homeTeamId || !match.awayTeamId)) {
       return NextResponse.json(
         { error: "Este partido aún no tiene equipos asignados" },
         { status: 400 }

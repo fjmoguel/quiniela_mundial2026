@@ -1,36 +1,36 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { scoreBracketForUser } from "@/lib/scoring";
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-  // Aggregate points by user
   const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      username: true,
-      predictions: { select: { pointsAwarded: true } },
-      groupPredictions: { select: { pointsAwarded: true } },
-    },
+    select: { id: true, username: true },
   });
 
-  const ranked = users
-    .map((u) => {
-      const matchPts = u.predictions.reduce((acc, p) => acc + p.pointsAwarded, 0);
-      const groupPts = u.groupPredictions.reduce((acc, p) => acc + p.pointsAwarded, 0);
-      const total = matchPts + groupPts;
+  const ranked = await Promise.all(
+    users.map(async (u) => {
+      const matchPts = await prisma.prediction.aggregate({
+        where: { userId: u.id },
+        _sum: { pointsAwarded: true },
+      });
+      const bracketPts = await scoreBracketForUser(u.id);
+      const preds = await prisma.prediction.count({ where: { userId: u.id } });
+      const matchTotal = matchPts._sum.pointsAwarded ?? 0;
       return {
         id: u.id,
         username: u.username,
-        matchPoints: matchPts,
-        groupPoints: groupPts,
-        totalPoints: total,
-        predictionsMade: u.predictions.length,
+        matchPoints: matchTotal,
+        bracketPoints: bracketPts,
+        totalPoints: matchTotal + bracketPts,
+        predictionsMade: preds,
       };
     })
-    .sort((a, b) => b.totalPoints - a.totalPoints);
+  );
+  ranked.sort((a, b) => b.totalPoints - a.totalPoints);
 
   return NextResponse.json({ leaderboard: ranked });
 }

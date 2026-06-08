@@ -33,9 +33,9 @@ export default async function DashboardPage() {
   const myRank = leaderboard.findIndex((r) => r.id === user.id) + 1;
   const myEntry = leaderboard.find((r) => r.id === user.id);
 
-  // Count my predictions and bracket completeness
-  const myMatchPreds = await prisma.prediction.count({ where: { userId: user.id } });
-  const myBracketPicks = await prisma.knockoutBracketPick.count({ where: { userId: user.id } });
+  // Count my predictions
+  const myMatchPreds = await prisma.prediction.count({ where: { userId: user.id, match: { stage: "group" } } });
+  const myKOPreds = await prisma.prediction.count({ where: { userId: user.id, match: { stage: { not: "group" } } } });
 
   return (
     <div className="space-y-5">
@@ -51,7 +51,7 @@ export default async function DashboardPage() {
           ⏰ <strong>Cierre de quiniela:</strong>{" "}
           {TOURNAMENT_LOCK.toLocaleString(undefined, { dateStyle: "full", timeStyle: "short" })}
           <div className="text-xs text-blue-700 mt-1">
-            Tienes {myMatchPreds}/72 marcadores · {myBracketPicks} picks en bracket
+            Tienes {myMatchPreds}/72 marcadores de grupos · {myKOPreds}/32 partidos KO
           </div>
         </div>
       )}
@@ -75,7 +75,7 @@ export default async function DashboardPage() {
         <Link href="/mi-bracket" className="bg-white border rounded-lg p-3 hover:bg-gray-50">
           <div className="text-xs text-gray-500">Predecir</div>
           <div className="font-medium text-sm">Mi bracket</div>
-          <div className="text-xs text-gray-400 mt-1">{myBracketPicks} picks</div>
+          <div className="text-xs text-gray-400 mt-1">{myKOPreds}/32 partidos</div>
         </Link>
         <Link href="/leaderboard" className="bg-white border rounded-lg p-3 hover:bg-gray-50">
           <div className="text-xs text-gray-500">Ver</div>

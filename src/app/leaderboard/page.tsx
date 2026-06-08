@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { getUserTotalPoints, scoreBracketForUser } from "@/lib/scoring";
+import { scoreBracketForUser } from "@/lib/scoring";
 
 export default async function LeaderboardPage() {
   const user = await requireUser();
@@ -15,21 +15,15 @@ export default async function LeaderboardPage() {
         where: { userId: u.id },
         _sum: { pointsAwarded: true },
       });
-      const groupSum = await prisma.groupPrediction.aggregate({
-        where: { userId: u.id },
-        _sum: { pointsAwarded: true },
-      });
       const bracketPts = await scoreBracketForUser(u.id);
       const preds = await prisma.prediction.count({ where: { userId: u.id } });
       const matchPts = matchSum._sum.pointsAwarded ?? 0;
-      const groupPts = groupSum._sum.pointsAwarded ?? 0;
       return {
         id: u.id,
         username: u.username,
         matchPts,
-        groupPts,
         bracketPts,
-        total: matchPts + groupPts + bracketPts,
+        total: matchPts + bracketPts,
         preds,
       };
     })
@@ -46,21 +40,16 @@ export default async function LeaderboardPage() {
               <th className="text-left px-4 py-3">#</th>
               <th className="text-left px-4 py-3">Usuario</th>
               <th className="text-right px-4 py-3 hidden sm:table-cell">Marcadores</th>
-              <th className="text-right px-4 py-3 hidden sm:table-cell">Posiciones</th>
               <th className="text-right px-4 py-3 hidden sm:table-cell">Bracket</th>
               <th className="text-right px-4 py-3">Total</th>
             </tr>
           </thead>
           <tbody>
             {leaderboard.map((r, i) => (
-              <tr
-                key={r.id}
-                className={`border-t ${r.id === user.id ? "bg-amber-50" : ""}`}
-              >
+              <tr key={r.id} className={`border-t ${r.id === user.id ? "bg-amber-50" : ""}`}>
                 <td className="px-4 py-3 font-medium">{i + 1}</td>
                 <td className="px-4 py-3">@{r.username}</td>
                 <td className="text-right px-4 py-3 hidden sm:table-cell text-gray-700">{r.matchPts}</td>
-                <td className="text-right px-4 py-3 hidden sm:table-cell text-gray-700">{r.groupPts}</td>
                 <td className="text-right px-4 py-3 hidden sm:table-cell text-gray-700">{r.bracketPts}</td>
                 <td className="text-right px-4 py-3 font-bold text-lg">{r.total}</td>
               </tr>
