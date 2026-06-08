@@ -253,10 +253,19 @@ export default function BracketView({
 }
 
 function Positioned(props: any) {
-  const { slot, top, left, ...rest } = props;
+  const { slot, top, left, editing, ...rest } = props;
+  // When editing, raise z-index so the expanded card floats above neighbors
   return (
-    <div style={{ position: "absolute", top, left, width: CARD_W }}>
-      <Card slot={slot} {...rest} />
+    <div
+      style={{
+        position: "absolute",
+        top,
+        left,
+        width: CARD_W,
+        zIndex: editing ? 20 : 1,
+      }}
+    >
+      <Card slot={slot} editing={editing} {...rest} />
     </div>
   );
 }
