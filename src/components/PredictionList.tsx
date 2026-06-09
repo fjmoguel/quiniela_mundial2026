@@ -95,16 +95,17 @@ export default function PredictionList({
     };
   }, []);
 
-  // Group matches by date for cleaner display
+  // Group matches by LOCAL date (user's timezone), not UTC
   const groupedByDate = useMemo(() => {
     const filtered = filter === "all" ? matches : matches.filter((m) => m.groupLetter === filter);
     const byDate: Record<string, Match[]> = {};
     for (const m of filtered) {
-      const dateKey = new Date(m.kickoff).toISOString().split("T")[0];
+      const d = new Date(m.kickoff);
+      // Format YYYY-MM-DD in user's local timezone (NOT UTC)
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       if (!byDate[dateKey]) byDate[dateKey] = [];
       byDate[dateKey].push(m);
     }
-    // sort each day's matches by time
     for (const key of Object.keys(byDate)) {
       byDate[key].sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
     }
