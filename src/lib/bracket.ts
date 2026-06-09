@@ -232,18 +232,49 @@ export async function buildUserBracket(userId: string): Promise<BracketSlotResol
 
     const match = matchByNum.get(slot.matchNum);
     const pred = match ? predByMatchId.get(match.id) : undefined;
+    const p: any = pred ?? {};
 
     let winnerId: string | null = null;
     let loserId: string | null = null;
     if (pred && homeRes.teamId && awayRes.teamId) {
-      if (pred.predHomeScore > pred.predAwayScore) {
+      // Determine winner in cascading order: regular → ET → penalties.
+      // This is critical for knockout: if 90' is a tie, look at ET; if ET tied
+      // too, look at penalties.
+      if (p.predHomeScore > p.predAwayScore) {
         winnerId = homeRes.teamId;
         loserId = awayRes.teamId;
-      } else if (pred.predAwayScore > pred.predHomeScore) {
+      } else if (p.predAwayScore > p.predHomeScore) {
         winnerId = awayRes.teamId;
         loserId = homeRes.teamId;
+      } else if (p.predHomeScoreET != null && p.predAwayScoreET != null) {
+        // Regular time is tied — check ET
+        if (p.predHomeScoreET > p.predAwayScoreET) {
+          winnerId = homeRes.teamId;
+          loserId = awayRes.teamId;
+        } else if (p.predAwayScoreET > p.predHomeScoreET) {
+          winnerId = awayRes.teamId;
+          loserId = homeRes.teamId;
+        } else if (p.predHomePens != null && p.predAwayPens != null) {
+          // ET also tied — check penalties
+          if (p.predHomePens > p.predAwayPens) {
+            winnerId = homeRes.teamId;
+            loserId = awayRes.teamId;
+          } else if (p.predAwayPens > p.predHomePens) {
+            winnerId = awayRes.teamId;
+            loserId = homeRes.teamId;
+          }
+        }
+      } else if (p.predHomePens != null && p.predAwayPens != null) {
+        // 90' tied and user skipped ET, going straight to penalties
+        // (uncommon but valid prediction shorthand)
+        if (p.predHomePens > p.predAwayPens) {
+          winnerId = homeRes.teamId;
+          loserId = awayRes.teamId;
+        } else if (p.predAwayPens > p.predHomePens) {
+          winnerId = awayRes.teamId;
+          loserId = homeRes.teamId;
+        }
       }
-      // If tie: winner determined by penalties pick (TODO: track penalty winner)
     }
 
     slotResults.set(slot.matchNum, {
