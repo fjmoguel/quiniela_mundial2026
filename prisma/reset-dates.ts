@@ -213,34 +213,63 @@ async function main() {
   }
   console.log(`   ✅ ${groupUpdated}/72 partidos de grupos actualizados\n`);
 
-  // === 2) Knockout (matchea por stage + matchNum encontrado en label) ===
+  // === 2) Knockout (matchea por stage + número extraído del label, o posición) ===
   console.log("🏆 Knockout (R32 → Final):");
-  // Get all KO matches once, then match by extracting num from label
   const allKOMatches = await prisma.match.findMany({
     where: { stage: { in: ["r32", "r16", "qf", "sf", "third_place", "final"] } },
+    orderBy: { kickoff: "asc" },
   });
 
-  // Try to extract match number from label - handles both old & new formats
+  // Extract match number from label - very lenient, tries multiple formats
   function extractMatchNum(label: string | null, stage: string): number | null {
-    if (!label) {
-      if (stage === "third_place") return 103;
-      if (stage === "final") return 104;
-      return null;
+    if (label) {
+      // Try multiple patterns: "Partido X", "X (...)", "· X", just "X" anywhere
+      const patterns = [/Partido\s+(\d+)/i, /·\s*(\d+)/, /\b(\d{2,3})\b/];
+      for (const re of patterns) {
+        const m = label.match(re);
+        if (m) {
+          const n = parseInt(m[1]);
+          if (n >= 73 && n <= 104) return n;
+        }
+      }
     }
-    // Try "Partido X" first, then any number after "·"
-    const m1 = label.match(/Partido (\d+)/);
-    if (m1) return parseInt(m1[1]);
-    const m2 = label.match(/·\s*(\d+)/);
-    if (m2) return parseInt(m2[1]);
     if (stage === "third_place") return 103;
     if (stage === "final") return 104;
     return null;
   }
 
   const matchByNum = new Map<number, (typeof allKOMatches)[number]>();
+  // First pass: extract from labels
   for (const m of allKOMatches) {
     const num = extractMatchNum(m.label, m.stage);
-    if (num) matchByNum.set(num, m);
+    if (num && !matchByNum.has(num)) matchByNum.set(num, m);
+  }
+
+  // Second pass (fallback): if some matches in a stage don't have a number,
+  // assign them by position within the stage (kickoff order matches official order)
+  const stageOrder: Record<string, number[]> = {
+    r32: [73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88],
+    r16: [89, 90, 91, 92, 93, 94, 95, 96],
+    qf: [97, 98, 99, 100],
+    sf: [101, 102],
+    third_place: [103],
+    final: [104],
+  };
+  for (const [stage, expectedNums] of Object.entries(stageOrder)) {
+    const stageMatches = allKOMatches.filter((m) => m.stage === stage);
+    const unassigned = stageMatches.filter((m) => {
+      const num = extractMatchNum(m.label, m.stage);
+      return !num || !matchByNum.has(num) || matchByNum.get(num)?.id !== m.id;
+    });
+    // For unassigned in this stage, try to fill the missing expectedNums
+    const missingNums = expectedNums.filter((n) => !matchByNum.has(n));
+    if (unassigned.length > 0 && missingNums.length > 0) {
+      // Sort unassigned by kickoff
+      unassigned.sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime());
+      for (let i = 0; i < Math.min(unassigned.length, missingNums.length); i++) {
+        matchByNum.set(missingNums[i], unassigned[i]);
+      }
+    }
   }
 
   // Define correct label format per stage
@@ -266,7 +295,7 @@ async function main() {
       data: {
         kickoff: utc(k.date, k.h, k.m, k.off),
         venue: k.venue,
-        label: labelByNum[k.num], // normalize label format
+        label: labelByNum[k.num],
       },
     });
     koUpdated++;
