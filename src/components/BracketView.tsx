@@ -105,10 +105,25 @@ export default function BracketView({
     };
   }, []);
 
-  const r32 = slots.filter((s) => s.stage === "r32").sort((a, b) => a.matchNum - b.matchNum);
-  const r16 = slots.filter((s) => s.stage === "r16").sort((a, b) => a.matchNum - b.matchNum);
-  const qf = slots.filter((s) => s.stage === "qf").sort((a, b) => a.matchNum - b.matchNum);
-  const sf = slots.filter((s) => s.stage === "sf").sort((a, b) => a.matchNum - b.matchNum);
+  // ORDEN VISUAL del bracket — los partidos se muestran en este orden vertical
+  // para que las conexiones de la llave coincidan con el bracket oficial FIFA.
+  //
+  // R16 #89 = W74 vs W77, R16 #90 = W73 vs W75, etc. Por eso los R32 NO van en
+  // orden 73,74,75... sino en pares que se conectan correctamente.
+  const R32_ORDER = [74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87];
+  const R16_ORDER = [89, 90, 93, 94, 91, 92, 95, 96];
+  const QF_ORDER = [97, 98, 99, 100];
+  const SF_ORDER = [101, 102];
+
+  function orderBy(stage: string, order: number[]) {
+    const byNum = new Map(slots.filter((s) => s.stage === stage).map((s) => [s.matchNum, s]));
+    return order.map((n) => byNum.get(n)).filter(Boolean) as BracketSlot[];
+  }
+
+  const r32 = orderBy("r32", R32_ORDER);
+  const r16 = orderBy("r16", R16_ORDER);
+  const qf = orderBy("qf", QF_ORDER);
+  const sf = orderBy("sf", SF_ORDER);
   const finalSlot = slots.find((s) => s.stage === "final");
   const thirdSlot = slots.find((s) => s.stage === "third_place");
 
