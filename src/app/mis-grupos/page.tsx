@@ -1,33 +1,37 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { computeUserGroupStandings } from "@/lib/bracket";
+import { isTournamentLocked } from "@/lib/config";
+import TiebreakerControl from "@/components/TiebreakerControl";
 import Link from "next/link";
 
 export default async function MisGruposPage() {
   const user = await requireUser();
   const teams = await prisma.team.findMany();
-  const teamById = new Map(teams.map((t) => [t.id, t]));
+  const teamByIdArr = teams.map((t) => [t.id, t] as const);
+  const teamById = Object.fromEntries(teamByIdArr);
+  const teamByIdMap = new Map(teamByIdArr);
 
   const standings = await computeUserGroupStandings(user.id);
   const userPredCount = await prisma.prediction.count({
     where: { userId: user.id, match: { stage: "group" } },
   });
+  const locked = isTournamentLocked();
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold">Mis grupos predichos</h1>
         <p className="text-gray-600 text-sm">
-          Cómo crees que termina cada grupo según tus marcadores predichos. Esto se actualiza
-          conforme guardas marcadores en{" "}
-          <Link href="/predicciones" className="underline text-brand">
-            Predecir
-          </Link>
-          .
+          Cómo crees que termina cada grupo según tus marcadores. Si hay empate en
+          puntos/DG/GF, podrás reordenar manualmente los equipos empatados.
         </p>
         {userPredCount < 72 && (
           <div className="mt-3 bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded text-sm">
-            ⚠️ Has predicho {userPredCount}/72 partidos. Los grupos pueden mostrarse incompletos.
+            ⚠️ Has predicho {userPredCount}/72 partidos. Los grupos pueden mostrarse incompletos.{" "}
+            <Link href="/predicciones" className="underline">
+              Completar
+            </Link>
           </div>
         )}
       </div>
@@ -52,7 +56,7 @@ export default async function MisGruposPage() {
                 </thead>
                 <tbody>
                   {rows.map((r, i) => {
-                    const team = teamById.get(r.teamId);
+                    const team = teamByIdMap.get(r.teamId);
                     return (
                       <tr
                         key={r.teamId}
@@ -72,6 +76,12 @@ export default async function MisGruposPage() {
                   })}
                 </tbody>
               </table>
+              <TiebreakerControl
+                groupLetter={letter}
+                rows={rows}
+                teamById={teamById as any}
+                locked={locked}
+              />
             </div>
           ))}
       </div>

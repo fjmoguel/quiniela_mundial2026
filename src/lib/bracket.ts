@@ -41,6 +41,18 @@ export async function computeUserGroupStandings(
   });
   const predByMatch = new Map(userPreds.map((p) => [p.matchId, p]));
 
+  // Load manual tiebreaker overrides (only used when teams are truly tied)
+  const overrides = await prisma.groupPrediction.findMany({ where: { userId } });
+  const overrideByGroup = new Map<string, string[]>();
+  for (const o of overrides) {
+    overrideByGroup.set(o.groupLetter, [
+      o.firstPlaceTeamId,
+      o.secondPlaceTeamId,
+      o.thirdPlaceTeamId,
+      o.fourthPlaceTeamId,
+    ]);
+  }
+
   const byGroup: Record<string, Map<string, GroupRow>> = {};
   for (const m of matches) {
     if (!m.groupLetter || !m.homeTeamId || !m.awayTeamId) continue;
@@ -85,10 +97,20 @@ export async function computeUserGroupStandings(
   const result: Record<string, GroupRow[]> = {};
   for (const [letter, m] of Object.entries(byGroup)) {
     const arr = Array.from(m.values());
-    arr.sort(
-      (a, b) =>
-        b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.fifaRank - b.fifaRank
-    );
+    const override = overrideByGroup.get(letter);
+    arr.sort((a, b) => {
+      // First: standard tiebreakers (pts > DG > GF)
+      if (a.pts !== b.pts) return b.pts - a.pts;
+      if (a.gd !== b.gd) return b.gd - a.gd;
+      if (a.gf !== b.gf) return b.gf - a.gf;
+      // Tied in everything → use manual override if set, else FIFA rank
+      if (override) {
+        const ai = override.indexOf(a.teamId);
+        const bi = override.indexOf(b.teamId);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+      }
+      return a.fifaRank - b.fifaRank;
+    });
     result[letter] = arr;
   }
   return result;
