@@ -49,6 +49,9 @@ export const SCORING = {
   KO_EXACT: 6,
   KO_ET_BONUS: 5,
   KO_PEN_BONUS: 8,
+  // Bonus extra por marcador exacto en ET y en penales (predijo el marcador y pegó)
+  KO_EXACT_ET_BONUS: 2,
+  KO_EXACT_PEN_BONUS: 2,
 };
 
 export const BRACKET_ROUNDS = [

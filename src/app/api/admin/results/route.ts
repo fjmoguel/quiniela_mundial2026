@@ -17,6 +17,14 @@ export async function POST(req: NextRequest) {
     const awayScore = body.awayScore == null ? null : Number(body.awayScore);
     const wentToExtraTime = Boolean(body.wentToExtraTime);
     const wentToPenalties = Boolean(body.wentToPenalties);
+
+    // ET and Pen scores (optional)
+    const parseOpt = (v: any) => (v == null || v === "" ? null : Number(v));
+    const homeScoreET = parseOpt(body.homeScoreET);
+    const awayScoreET = parseOpt(body.awayScoreET);
+    const homePens = parseOpt(body.homePens);
+    const awayPens = parseOpt(body.awayPens);
+
     const homeTeamId = body.homeTeamId ? String(body.homeTeamId) : undefined;
     const awayTeamId = body.awayTeamId ? String(body.awayTeamId) : undefined;
 
@@ -30,6 +38,10 @@ export async function POST(req: NextRequest) {
       data: {
         homeScore,
         awayScore,
+        homeScoreET,
+        awayScoreET,
+        homePens,
+        awayPens,
         wentToExtraTime,
         wentToPenalties,
         homeTeamId: homeTeamId ?? match.homeTeamId,

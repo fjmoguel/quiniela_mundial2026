@@ -151,6 +151,10 @@ function AdminRow({
   const [away, setAway] = useState<string>(match.awayScore?.toString() ?? "");
   const [et, setEt] = useState(match.wentToExtraTime);
   const [pen, setPen] = useState(match.wentToPenalties);
+  const [homeET, setHomeET] = useState<string>((match as any).homeScoreET?.toString() ?? "");
+  const [awayET, setAwayET] = useState<string>((match as any).awayScoreET?.toString() ?? "");
+  const [homePens, setHomePens] = useState<string>((match as any).homePens?.toString() ?? "");
+  const [awayPens, setAwayPens] = useState<string>((match as any).awayPens?.toString() ?? "");
   const [homeTeamId, setHomeTeamId] = useState(match.homeTeam?.id ?? "");
   const [awayTeamId, setAwayTeamId] = useState(match.awayTeam?.id ?? "");
 
@@ -162,6 +166,10 @@ function AdminRow({
       awayScore: away === "" ? null : parseInt(away),
       wentToExtraTime: et,
       wentToPenalties: pen,
+      homeScoreET: homeET === "" ? null : parseInt(homeET),
+      awayScoreET: awayET === "" ? null : parseInt(awayET),
+      homePens: homePens === "" ? null : parseInt(homePens),
+      awayPens: awayPens === "" ? null : parseInt(awayPens),
     };
     if (needsTeams) {
       payload.homeTeamId = homeTeamId;
@@ -249,15 +257,63 @@ function AdminRow({
         </div>
 
         {match.stage !== "group" && (
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-3 text-xs flex-wrap">
             <label className="flex items-center gap-1">
               <input type="checkbox" checked={et} onChange={(e) => setEt(e.target.checked)} />
               ET
             </label>
+            {et && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={homeET}
+                  onChange={(e) => setHomeET(e.target.value)}
+                  className="w-12 border rounded px-1 py-0.5 text-center"
+                  placeholder="-"
+                />
+                <span>–</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={awayET}
+                  onChange={(e) => setAwayET(e.target.value)}
+                  className="w-12 border rounded px-1 py-0.5 text-center"
+                  placeholder="-"
+                />
+                <span className="text-gray-400">(tras ET)</span>
+              </div>
+            )}
             <label className="flex items-center gap-1">
               <input type="checkbox" checked={pen} onChange={(e) => setPen(e.target.checked)} />
               PEN
             </label>
+            {pen && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={homePens}
+                  onChange={(e) => setHomePens(e.target.value)}
+                  className="w-12 border rounded px-1 py-0.5 text-center"
+                  placeholder="-"
+                />
+                <span>–</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={awayPens}
+                  onChange={(e) => setAwayPens(e.target.value)}
+                  className="w-12 border rounded px-1 py-0.5 text-center"
+                  placeholder="-"
+                />
+                <span className="text-gray-400">(penales)</span>
+              </div>
+            )}
           </div>
         )}
 

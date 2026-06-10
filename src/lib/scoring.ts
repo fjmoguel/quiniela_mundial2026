@@ -28,15 +28,14 @@ type ScoringPrediction = {
 /**
  * Score a single match prediction (works for group and knockout).
  */
-export function scoreSinglePrediction(match: ScoringMatch, pred: ScoringPrediction): number {
+export function scoreSinglePrediction(match: any, pred: any): number {
   if (match.homeScore == null || match.awayScore == null) return 0;
   const isKO = match.stage !== "group";
 
   let pts = 0;
 
-  // Score for marker
   if (isKO) {
-    // Marker in regular time
+    // Marcador en tiempo regular (90')
     if (pred.predHomeScore === match.homeScore && pred.predAwayScore === match.awayScore) {
       pts += SCORING.KO_EXACT;
     } else {
@@ -44,12 +43,38 @@ export function scoreSinglePrediction(match: ScoringMatch, pred: ScoringPredicti
       const predOut = Math.sign(pred.predHomeScore - pred.predAwayScore);
       if (actual === predOut) pts += SCORING.KO_RESULT;
     }
-    // ET bonus
-    if (match.wentToExtraTime && pred.predExtraTime) pts += SCORING.KO_ET_BONUS;
-    // Penalties bonus
-    if (match.wentToPenalties && pred.predPenalties) pts += SCORING.KO_PEN_BONUS;
+    // Bonus por acertar que fue a ET
+    if (match.wentToExtraTime && pred.predExtraTime) {
+      pts += SCORING.KO_ET_BONUS;
+      // Bonus extra por acertar marcador exacto tras ET
+      if (
+        pred.predHomeScoreET != null &&
+        pred.predAwayScoreET != null &&
+        match.homeScoreET != null &&
+        match.awayScoreET != null &&
+        pred.predHomeScoreET === match.homeScoreET &&
+        pred.predAwayScoreET === match.awayScoreET
+      ) {
+        pts += SCORING.KO_EXACT_ET_BONUS;
+      }
+    }
+    // Bonus por acertar que fue a penales
+    if (match.wentToPenalties && pred.predPenalties) {
+      pts += SCORING.KO_PEN_BONUS;
+      // Bonus extra por acertar marcador exacto de penales
+      if (
+        pred.predHomePens != null &&
+        pred.predAwayPens != null &&
+        match.homePens != null &&
+        match.awayPens != null &&
+        pred.predHomePens === match.homePens &&
+        pred.predAwayPens === match.awayPens
+      ) {
+        pts += SCORING.KO_EXACT_PEN_BONUS;
+      }
+    }
   } else {
-    // Group
+    // Grupos
     if (pred.predHomeScore === match.homeScore && pred.predAwayScore === match.awayScore) {
       pts += SCORING.GROUP_EXACT;
     } else {
