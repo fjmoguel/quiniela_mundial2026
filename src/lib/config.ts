@@ -60,7 +60,7 @@ export const BRACKET_ROUNDS = [
   { key: "sf", label: "Semifinales", count: 4, pointsPerCorrect: 8 },
   { key: "final", label: "Finalistas", count: 2, pointsPerCorrect: 12 },
   { key: "third", label: "Tercer lugar", count: 1, pointsPerCorrect: 12 },
-  { key: "champion", label: "Campeón", count: 1, pointsPerCorrect: 30 },
+  { key: "champion", label: "Campeón", count: 1, pointsPerCorrect: 60 },
 ] as const;
 
 export const PERFECT_ROUND_BONUS: Record<string, number> = {
