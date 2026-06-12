@@ -68,6 +68,7 @@ export default async function PrediccionesPage({
       />
 
       <PredictionList
+        key={actualViewedUserId}
         locked={locked}
         matches={matches.map((m) => ({
           id: m.id,

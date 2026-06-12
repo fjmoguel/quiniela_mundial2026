@@ -73,6 +73,7 @@ export default async function MiBracketPage({
       />
 
       <BracketView
+        key={viewedUser.id}
         bracket={bracket.map((s) => ({
           ...s,
           homeTeam: s.homeTeamId ? teamById[s.homeTeamId] : null,
