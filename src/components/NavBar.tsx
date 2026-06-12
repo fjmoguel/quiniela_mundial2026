@@ -21,9 +21,9 @@ export default function NavBar({ user }: { user: { username: string; isAdmin: bo
         </Link>
         <nav className="flex items-center gap-1 sm:gap-2 text-sm flex-wrap">
           <Link href="/dashboard" className="px-2 py-1 hover:bg-gray-100 rounded">Inicio</Link>
-          <Link href="/predicciones" className="px-2 py-1 hover:bg-gray-100 rounded">Predecir</Link>
-          <Link href="/mis-grupos" className="px-2 py-1 hover:bg-gray-100 rounded">Mis grupos</Link>
-          <Link href="/mi-bracket" className="px-2 py-1 hover:bg-gray-100 rounded">Mi bracket</Link>
+          <Link href="/predicciones" className="px-2 py-1 hover:bg-gray-100 rounded">Predicciones</Link>
+          <Link href="/mis-grupos" className="px-2 py-1 hover:bg-gray-100 rounded">Grupos</Link>
+          <Link href="/mi-bracket" className="px-2 py-1 hover:bg-gray-100 rounded">Bracket</Link>
           <Link href="/leaderboard" className="px-2 py-1 hover:bg-gray-100 rounded">Tabla</Link>
           {user.isAdmin && (
             <Link href="/admin" className="px-2 py-1 bg-amber-100 hover:bg-amber-200 rounded">

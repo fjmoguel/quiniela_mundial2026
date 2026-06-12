@@ -3,38 +3,60 @@ import { requireUser } from "@/lib/auth";
 import { computeUserGroupStandings } from "@/lib/bracket";
 import { isTournamentLocked } from "@/lib/config";
 import TiebreakerControl from "@/components/TiebreakerControl";
+import UserSelector from "@/components/UserSelector";
 import Link from "next/link";
 
-export default async function MisGruposPage() {
-  const user = await requireUser();
+export default async function MisGruposPage({
+  searchParams,
+}: {
+  searchParams: { u?: string };
+}) {
+  const me = await requireUser();
+
+  const users = await prisma.user.findMany({
+    select: { id: true, username: true },
+    orderBy: { username: "asc" },
+  });
+
+  const requestedUserId = searchParams.u;
+  const viewedUser = users.find((u) => u.id === requestedUserId) ?? users.find((u) => u.id === me.id)!;
+  const viewingOther = viewedUser.id !== me.id;
+
   const teams = await prisma.team.findMany();
   const teamByIdArr = teams.map((t) => [t.id, t] as const);
   const teamById = Object.fromEntries(teamByIdArr);
   const teamByIdMap = new Map(teamByIdArr);
 
-  const standings = await computeUserGroupStandings(user.id);
-  const userPredCount = await prisma.prediction.count({
-    where: { userId: user.id, match: { stage: "group" } },
+  const standings = await computeUserGroupStandings(viewedUser.id);
+  const viewedPredCount = await prisma.prediction.count({
+    where: { userId: viewedUser.id, match: { stage: "group" } },
   });
-  const locked = isTournamentLocked();
+  // Lock editing if viewing other user OR if tournament is locked
+  const locked = viewingOther || isTournamentLocked();
 
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">Mis grupos predichos</h1>
+        <h1 className="text-2xl font-semibold">
+          {viewingOther ? `Grupos de @${viewedUser.username}` : "Mis grupos predichos"}
+        </h1>
         <p className="text-gray-600 text-sm">
-          Cómo crees que termina cada grupo según tus marcadores. Si hay empate en
-          puntos/DG/GF, podrás reordenar manualmente los equipos empatados.
+          Cómo termina cada grupo según los marcadores predichos. Si hay empate en
+          pts/DG/GF, se puede reordenar manualmente los equipos empatados.
         </p>
-        {userPredCount < 72 && (
+        {!viewingOther && viewedPredCount < 72 && (
           <div className="mt-3 bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded text-sm">
-            ⚠️ Has predicho {userPredCount}/72 partidos. Los grupos pueden mostrarse incompletos.{" "}
-            <Link href="/predicciones" className="underline">
-              Completar
-            </Link>
+            ⚠️ Has predicho {viewedPredCount}/72 partidos.{" "}
+            <Link href="/predicciones" className="underline">Completar</Link>
           </div>
         )}
       </div>
+
+      <UserSelector
+        users={users}
+        currentViewedUserId={viewedUser.id}
+        currentUserId={me.id}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {Object.entries(standings)

@@ -5,40 +5,59 @@ import { isTournamentLocked, TOURNAMENT_LOCK } from "@/lib/config";
 import { buildUserBracket } from "@/lib/bracket";
 import BracketView from "@/components/BracketView";
 import LocalDate from "@/components/LocalDate";
+import UserSelector from "@/components/UserSelector";
 
-export default async function MiBracketPage() {
-  const user = await requireUser();
-  const bracket = await buildUserBracket(user.id);
+export default async function MiBracketPage({
+  searchParams,
+}: {
+  searchParams: { u?: string };
+}) {
+  const me = await requireUser();
+
+  const users = await prisma.user.findMany({
+    select: { id: true, username: true },
+    orderBy: { username: "asc" },
+  });
+
+  const requestedUserId = searchParams.u;
+  const viewedUser = users.find((u) => u.id === requestedUserId) ?? users.find((u) => u.id === me.id)!;
+  const viewingOther = viewedUser.id !== me.id;
+
+  const bracket = await buildUserBracket(viewedUser.id);
   const teams = await prisma.team.findMany();
   const teamById = Object.fromEntries(teams.map((t) => [t.id, t]));
 
   const groupPredCount = await prisma.prediction.count({
-    where: { userId: user.id, match: { stage: "group" } },
+    where: { userId: viewedUser.id, match: { stage: "group" } },
   });
+
+  // Lock if viewing other user or tournament locked
+  const locked = viewingOther || isTournamentLocked();
 
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">Mi bracket</h1>
+        <h1 className="text-2xl font-semibold">
+          {viewingOther ? `Bracket de @${viewedUser.username}` : "Mi bracket"}
+        </h1>
         <p className="text-gray-600 text-sm">
-          El bracket se arma <strong>automáticamente</strong> con tus marcadores de fase de
-          grupos. Aquí predices marcadores de cada partido de knockout: tiempo regular,
-          tiempo extra y penales son <strong>opcionales</strong>.
+          El bracket se arma <strong>automáticamente</strong> con los marcadores de fase de grupos.
         </p>
-        {groupPredCount < 72 && (
+        {!viewingOther && groupPredCount < 72 && (
           <div className="mt-3 bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded text-sm">
             ⚠️ Has predicho {groupPredCount}/72 marcadores de grupos. Completa todos en{" "}
             <Link href="/predicciones" className="underline">
-              Predecir
+              Predicciones
             </Link>{" "}
             para que el bracket se llene completo.
           </div>
         )}
-        {isTournamentLocked() ? (
+        {!viewingOther && isTournamentLocked() && (
           <div className="mt-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
             🔒 Predicciones cerradas. El Mundial ya empezó.
           </div>
-        ) : (
+        )}
+        {!viewingOther && !isTournamentLocked() && (
           <div className="mt-3 bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded text-sm">
             Cierra el{" "}
             <LocalDate iso={TOURNAMENT_LOCK.toISOString()} format="full" />{" "}
@@ -46,13 +65,20 @@ export default async function MiBracketPage() {
           </div>
         )}
       </div>
+
+      <UserSelector
+        users={users}
+        currentViewedUserId={viewedUser.id}
+        currentUserId={me.id}
+      />
+
       <BracketView
         bracket={bracket.map((s) => ({
           ...s,
           homeTeam: s.homeTeamId ? teamById[s.homeTeamId] : null,
           awayTeam: s.awayTeamId ? teamById[s.awayTeamId] : null,
         }))}
-        locked={isTournamentLocked()}
+        locked={locked}
       />
     </div>
   );
