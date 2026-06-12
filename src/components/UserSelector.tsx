@@ -26,6 +26,9 @@ export default function UserSelector({
     }
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
+    // Force the server component to re-fetch with the new searchParams.
+    // Without this, Next.js sometimes serves cached data and shows stale predictions.
+    router.refresh();
   }
 
   const sorted = [...users].sort((a, b) => {
