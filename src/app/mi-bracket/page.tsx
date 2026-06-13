@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { isTournamentLocked, TOURNAMENT_LOCK } from "@/lib/config";
+import { isTournamentLocked, isLockedForUser, getBypassDeadline, TOURNAMENT_LOCK } from "@/lib/config";
 import { buildUserBracket } from "@/lib/bracket";
 import BracketView from "@/components/BracketView";
 import LocalDate from "@/components/LocalDate";
@@ -31,8 +31,8 @@ export default async function MiBracketPage({
     where: { userId: viewedUser.id, match: { stage: "group" } },
   });
 
-  // Lock if viewing other user or tournament locked
-  const locked = viewingOther || isTournamentLocked();
+  // Lock if viewing other user OR tournament locked for this specific user
+  const locked = viewingOther || isLockedForUser(me.username);
 
   return (
     <div className="space-y-4">
@@ -52,9 +52,20 @@ export default async function MiBracketPage({
             para que el bracket se llene completo.
           </div>
         )}
-        {!viewingOther && isTournamentLocked() && (
+        {!viewingOther && isLockedForUser(me.username) && (
           <div className="mt-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
             🔒 Predicciones cerradas. El Mundial ya empezó.
+          </div>
+        )}
+        {!viewingOther && !isLockedForUser(me.username) && isTournamentLocked() && (
+          <div className="mt-3 bg-purple-50 border border-purple-200 text-purple-700 px-3 py-2 rounded text-sm">
+            🎟️ Acceso especial: tienes permiso para predecir aunque el torneo ya empezó.
+            {getBypassDeadline(me.username) && (
+              <> Tu acceso expira el{" "}
+                <LocalDate iso={getBypassDeadline(me.username)!.toISOString()} format="full" />
+                . Después de esa hora, todo se bloquea.
+              </>
+            )}
           </div>
         )}
         {!viewingOther && !isTournamentLocked() && (

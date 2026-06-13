@@ -14,6 +14,74 @@ export function msUntilLock(): number {
 }
 
 /**
+ * Usernames que pueden seguir editando aunque el torneo esté bloqueado.
+ *
+ * Hay 2 formas de agregar usuarios (cualquiera funciona):
+ *
+ * 1) Hardcoded — edita la lista BYPASS_USERNAMES_HARDCODED abajo,
+ *    haz commit + push, y Vercel redeploya solo. Es la más rápida.
+ *    Cada entrada puede tener un `until` opcional (ISO date string) para
+ *    que el bypass expire automáticamente en esa fecha.
+ *
+ * 2) Env var BYPASS_LOCK_USERNAMES en Vercel (comma-separated).
+ *    Ej: "juan,maria,pedro" (sin deadline — bypass permanente).
+ */
+
+// 👇 EDITA AQUÍ para agregar usuarios que pueden seguir prediciendo.
+// Cada entrada: { username: "..." } o { username: "...", until: "2026-06-13T17:00:00Z" }
+// El `until` es opcional. Si lo pones, el bypass expira automáticamente en esa fecha.
+const BYPASS_USERNAMES_HARDCODED: { username: string; until?: string }[] = [
+  // Mariano: tiene hasta sábado 13 jun 2026, 1 PM ET (= 11 AM CDMX) para llenar la quiniela.
+  { username: "mariano", until: "2026-06-13T17:00:00Z" },
+];
+
+const BYPASS_USERNAMES_ENV = process.env.BYPASS_LOCK_USERNAMES ?? "";
+const BYPASS_FROM_ENV: { username: string; until?: string }[] = BYPASS_USERNAMES_ENV
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean)
+  .map((username) => ({ username }));
+
+const ALL_BYPASS: { username: string; until?: string }[] = [
+  ...BYPASS_FROM_ENV,
+  ...BYPASS_USERNAMES_HARDCODED.map((e) => ({
+    username: e.username.trim().toLowerCase(),
+    until: e.until,
+  })),
+];
+
+/**
+ * Lista de usernames que actualmente tienen bypass activo (deadline no expirado).
+ * Útil si necesitas mostrar la lista en algún UI.
+ */
+export const BYPASS_LOCK_USERNAMES: string[] = ALL_BYPASS
+  .filter((e) => !e.until || new Date() < new Date(e.until))
+  .map((e) => e.username);
+
+/**
+ * Devuelve el deadline del bypass para un usuario, o null si no tiene bypass.
+ */
+export function getBypassDeadline(username: string | undefined | null): Date | null {
+  if (!username) return null;
+  const lower = username.toLowerCase();
+  const entry = ALL_BYPASS.find((e) => e.username === lower);
+  if (!entry) return null;
+  if (!entry.until) return null; // bypass permanente, sin deadline
+  const deadline = new Date(entry.until);
+  if (new Date() >= deadline) return null; // ya expiró
+  return deadline;
+}
+
+/**
+ * Check if THIS specific user is locked. Returns false if user is in bypass list.
+ */
+export function isLockedForUser(username: string | undefined | null): boolean {
+  if (!isTournamentLocked()) return false; // global lock not active yet
+  if (!username) return true;
+  return !BYPASS_LOCK_USERNAMES.includes(username.toLowerCase());
+}
+
+/**
  * SCORING — final v3 (Mundial 2026)
  *
  * Grupos (marcadores predichos):
@@ -60,7 +128,7 @@ export const BRACKET_ROUNDS = [
   { key: "sf", label: "Semifinales", count: 4, pointsPerCorrect: 8 },
   { key: "final", label: "Finalistas", count: 2, pointsPerCorrect: 12 },
   { key: "third", label: "Tercer lugar", count: 1, pointsPerCorrect: 12 },
-  { key: "champion", label: "Campeón", count: 1, pointsPerCorrect: 60 },
+  { key: "champion", label: "Campeón", count: 1, pointsPerCorrect: 30 },
 ] as const;
 
 export const PERFECT_ROUND_BONUS: Record<string, number> = {

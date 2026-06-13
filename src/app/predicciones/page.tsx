@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { isTournamentLocked, TOURNAMENT_LOCK } from "@/lib/config";
+import { isTournamentLocked, isLockedForUser, getBypassDeadline, TOURNAMENT_LOCK } from "@/lib/config";
 import PredictionList from "@/components/PredictionList";
 import LocalDate from "@/components/LocalDate";
 import UserSelector from "@/components/UserSelector";
@@ -37,8 +37,9 @@ export default async function PrediccionesPage({
   });
 
   const viewedPredsMap = new Map(viewedPreds.map((p) => [p.matchId, p]));
-  // If viewing another user, force read-only. Otherwise honor the lock state.
-  const locked = viewingOther || isTournamentLocked();
+  // If viewing another user, force read-only.
+  // Otherwise honor the lock state, but respect bypass list for special users.
+  const locked = viewingOther || isLockedForUser(me.username);
 
   return (
     <div className="space-y-4">
@@ -47,9 +48,20 @@ export default async function PrediccionesPage({
         <p className="text-gray-600 text-sm">
           1 pt por resultado correcto, 3 pts por marcador exacto.
         </p>
-        {!viewingOther && isTournamentLocked() && (
+        {!viewingOther && isLockedForUser(me.username) && (
           <div className="mt-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
             🔒 Predicciones cerradas. El Mundial ya empezó.
+          </div>
+        )}
+        {!viewingOther && !isLockedForUser(me.username) && isTournamentLocked() && (
+          <div className="mt-3 bg-purple-50 border border-purple-200 text-purple-700 px-3 py-2 rounded text-sm">
+            🎟️ Acceso especial: tienes permiso para predecir aunque el torneo ya empezó.
+            {getBypassDeadline(me.username) && (
+              <> Tu acceso expira el{" "}
+                <LocalDate iso={getBypassDeadline(me.username)!.toISOString()} format="full" />
+                . Después de esa hora, todo se bloquea.
+              </>
+            )}
           </div>
         )}
         {!viewingOther && !isTournamentLocked() && (
