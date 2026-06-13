@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { isTournamentLocked } from "@/lib/config";
+import { isLockedForUser, BYPASS_LOCK_USERNAMES, isTournamentLocked } from "@/lib/config";
 
 // GET: list all of the current user's predictions
 export async function GET() {
@@ -64,9 +64,21 @@ export async function POST(req: NextRequest) {
     const match = await prisma.match.findUnique({ where: { id: matchId } });
     if (!match) return NextResponse.json({ error: "Partido no existe" }, { status: 404 });
 
-    if (isTournamentLocked()) {
+    if (isLockedForUser(user.username)) {
+      // Include debug info so we can diagnose bypass issues
+      const debug = {
+        username: user.username,
+        usernameLower: user.username?.toLowerCase(),
+        bypassList: BYPASS_LOCK_USERNAMES,
+        tournamentLocked: isTournamentLocked(),
+        serverTime: new Date().toISOString(),
+      };
+      console.log("LOCK DENIED:", JSON.stringify(debug));
       return NextResponse.json(
-        { error: "Las predicciones ya están cerradas (cerraron al inicio del Mundial)" },
+        {
+          error: "Las predicciones ya están cerradas (cerraron al inicio del Mundial)",
+          debug,
+        },
         { status: 403 }
       );
     }
