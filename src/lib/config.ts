@@ -112,12 +112,14 @@ export const SCORING = {
   // Grupos
   GROUP_RESULT: 1,
   GROUP_EXACT: 3,
+  // 1 pt por cada posición acertada en el orden final de cada grupo (1°, 2°, 3°, 4°)
+  // Máximo: 12 grupos × 4 posiciones = 48 pts
+  GROUP_POSITION: 1,
   // Knockout marcadores
   KO_RESULT: 2,
   KO_EXACT: 6,
   KO_ET_BONUS: 5,
   KO_PEN_BONUS: 8,
-  // Bonus extra por marcador exacto en ET y en penales (predijo el marcador y pegó)
   KO_EXACT_ET_BONUS: 2,
   KO_EXACT_PEN_BONUS: 2,
 };

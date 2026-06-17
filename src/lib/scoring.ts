@@ -179,12 +179,37 @@ export async function scoreBracketForUser(userId: string): Promise<number> {
 }
 
 /**
+ * Score a user's predictions for the final group positions (1°, 2°, 3°, 4°).
+ * Compares the user's predicted standings against the real standings (based on
+ * actual match results). Awards SCORING.GROUP_POSITION pts per correct position.
+ * Only counts groups where ALL 6 matches have results.
+ */
+export async function scoreGroupPositionsForUser(userId: string): Promise<number> {
+  const { computeUserGroupStandings, computeRealGroupStandings } = await import("./bracket");
+  const userStandings = await computeUserGroupStandings(userId);
+  const realStandings = await computeRealGroupStandings();
+
+  let points = 0;
+  for (const [letter, realRows] of Object.entries(realStandings)) {
+    const userRows = userStandings[letter];
+    if (!userRows || userRows.length !== 4 || realRows.length !== 4) continue;
+
+    for (let i = 0; i < 4; i++) {
+      if (userRows[i].teamId === realRows[i].teamId) {
+        points += SCORING.GROUP_POSITION;
+      }
+    }
+  }
+  return points;
+}
+
+/**
  * Total points for a user: match preds + group positions + bracket.
  * Defensive against empty collections (MongoDB throws on aggregate for empty colls)
  */
 export async function getUserTotalPoints(userId: string): Promise<number> {
   let matchPts = 0;
-  let groupPts = 0;
+  let groupPosPts = 0;
   let bracket = 0;
 
   try {
@@ -198,13 +223,9 @@ export async function getUserTotalPoints(userId: string): Promise<number> {
   }
 
   try {
-    const gp = await prisma.groupPrediction.findMany({
-      where: { userId },
-      select: { pointsAwarded: true },
-    });
-    groupPts = gp.reduce((acc, p) => acc + (p.pointsAwarded ?? 0), 0);
+    groupPosPts = await scoreGroupPositionsForUser(userId);
   } catch (e) {
-    console.error("groupPts error", e);
+    console.error("groupPosPts error", e);
   }
 
   try {
@@ -213,7 +234,7 @@ export async function getUserTotalPoints(userId: string): Promise<number> {
     console.error("bracket error", e);
   }
 
-  return matchPts + groupPts + bracket;
+  return matchPts + groupPosPts + bracket;
 }
 
 /**

@@ -29,6 +29,80 @@ type GroupRow = {
   fifaRank: number;
 };
 
+/**
+ * Calculate REAL group standings based on actual match results.
+ * Only includes groups where all 6 matches have results.
+ */
+export async function computeRealGroupStandings(): Promise<Record<string, GroupRow[]>> {
+  const teams = await prisma.team.findMany();
+  const teamById = new Map(teams.map((t) => [t.id, t]));
+
+  const matches = await prisma.match.findMany({ where: { stage: "group" } });
+
+  const byGroup: Record<string, Map<string, GroupRow>> = {};
+  const groupMatchCount: Record<string, number> = {};
+  const groupCompletedCount: Record<string, number> = {};
+
+  for (const m of matches) {
+    if (!m.groupLetter || !m.homeTeamId || !m.awayTeamId) continue;
+    if (!byGroup[m.groupLetter]) byGroup[m.groupLetter] = new Map();
+    const g = byGroup[m.groupLetter];
+
+    groupMatchCount[m.groupLetter] = (groupMatchCount[m.groupLetter] ?? 0) + 1;
+    if (m.homeScore != null && m.awayScore != null) {
+      groupCompletedCount[m.groupLetter] = (groupCompletedCount[m.groupLetter] ?? 0) + 1;
+    }
+
+    const ensure = (teamId: string) => {
+      if (!g.has(teamId)) {
+        const t = teamById.get(teamId)!;
+        g.set(teamId, {
+          teamId,
+          groupLetter: m.groupLetter!,
+          pts: 0,
+          gd: 0,
+          gf: 0,
+          fifaRank: t.fifaRank ?? 200,
+        });
+      }
+      return g.get(teamId)!;
+    };
+
+    ensure(m.homeTeamId);
+    ensure(m.awayTeamId);
+
+    if (m.homeScore == null || m.awayScore == null) continue;
+
+    const home = g.get(m.homeTeamId)!;
+    const away = g.get(m.awayTeamId)!;
+    home.gf += m.homeScore;
+    home.gd += m.homeScore - m.awayScore;
+    away.gf += m.awayScore;
+    away.gd += m.awayScore - m.homeScore;
+    if (m.homeScore > m.awayScore) home.pts += 3;
+    else if (m.homeScore < m.awayScore) away.pts += 3;
+    else {
+      home.pts++;
+      away.pts++;
+    }
+  }
+
+  const result: Record<string, GroupRow[]> = {};
+  for (const [letter, m] of Object.entries(byGroup)) {
+    // Only include groups where ALL matches are complete (6 matches per group)
+    if (groupCompletedCount[letter] !== groupMatchCount[letter] || groupMatchCount[letter] !== 6) {
+      continue;
+    }
+    const arr = Array.from(m.values());
+    arr.sort(
+      (a, b) =>
+        b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.fifaRank - b.fifaRank
+    );
+    result[letter] = arr;
+  }
+  return result;
+}
+
 export async function computeUserGroupStandings(
   userId: string
 ): Promise<Record<string, GroupRow[]>> {
