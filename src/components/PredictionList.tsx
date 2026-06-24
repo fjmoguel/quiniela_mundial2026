@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useRef } from "react";
 import LocalDate from "./LocalDate";
 
 type Team = { id: string; name: string; flag: string };
@@ -35,13 +35,25 @@ export default function PredictionList({
   locked: boolean;
 }) {
   const [filter, setFilter] = useState<string>("all");
+  const [onlyToday, setOnlyToday] = useState<boolean>(false);
   const [myPreds, setMyPreds] = useState<Record<string, Pred>>(initial);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const saveTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // Group matches by LOCAL date (user's timezone), not UTC
+  const todayDateKey = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  }, []);
+
   const groupedByDate = useMemo(() => {
-    const filtered = filter === "all" ? matches : matches.filter((m) => m.groupLetter === filter);
+    let filtered = filter === "all" ? matches : matches.filter((m) => m.groupLetter === filter);
+    if (onlyToday) {
+      filtered = filtered.filter((m) => {
+        const d = new Date(m.kickoff);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        return key === todayDateKey;
+      });
+    }
     const byDate: Record<string, Match[]> = {};
     for (const m of filtered) {
       const d = new Date(m.kickoff);
@@ -53,28 +65,7 @@ export default function PredictionList({
       byDate[key].sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
     }
     return byDate;
-  }, [matches, filter]);
-
-  // Determine the date to scroll to: today if there are matches today,
-  // otherwise the next upcoming day with matches.
-  const todayDateKey = useMemo(() => {
-    const now = new Date();
-    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const allKeys = Object.keys(groupedByDate).sort();
-    if (allKeys.includes(todayKey)) return todayKey;
-    // Pick the next upcoming date
-    const upcoming = allKeys.find((k) => k >= todayKey);
-    // Or the last day if everything is in the past
-    return upcoming ?? allKeys[allKeys.length - 1] ?? null;
-  }, [groupedByDate]);
-
-  const scrollToToday = useCallback(() => {
-    if (!todayDateKey) return;
-    const el = document.getElementById(`day-${todayDateKey}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [todayDateKey]);
+  }, [matches, filter, onlyToday, todayDateKey]);
 
   function update(matchId: string, partial: Partial<Pred>) {
     if (locked) return;
@@ -91,7 +82,6 @@ export default function PredictionList({
           ...partial,
         },
       };
-      // Schedule save (debounce)
       if (saveTimer.current[matchId]) clearTimeout(saveTimer.current[matchId]);
       saveTimer.current[matchId] = setTimeout(() => save(matchId, next[matchId]), 700);
       return next;
@@ -125,10 +115,10 @@ export default function PredictionList({
   }
 
   const predCount = Object.keys(myPreds).length;
+  const showingDates = Object.keys(groupedByDate).sort();
 
   return (
     <div className="space-y-3 relative">
-      {/* Floating save indicator */}
       {saveState !== "idle" && (
         <div className="fixed top-20 right-4 z-50 bg-white border shadow-md rounded px-3 py-1.5 text-xs">
           {saveState === "saving" && <span className="text-gray-600">⟳ Guardando...</span>}
@@ -137,46 +127,58 @@ export default function PredictionList({
         </div>
       )}
 
-      {/* Floating "scroll to today" button */}
-      {todayDateKey && (
-        <button
-          onClick={scrollToToday}
-          className="fixed bottom-6 right-6 z-40 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-lg flex items-center gap-1.5 transition"
-          aria-label="Ir al día de hoy"
-          title="Saltar al día de hoy"
-        >
-          📅 Hoy
-        </button>
-      )}
-
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="text-sm text-gray-600">
           {predCount}/72 predichos
         </div>
-        <div className="flex gap-1 flex-wrap">
-          <button
-            onClick={() => setFilter("all")}
-            className={`px-2 py-1 text-xs rounded ${filter === "all" ? "bg-black text-white" : "bg-gray-100"}`}
-          >
-            Todos
-          </button>
-          {GROUPS.map((g) => (
-            <button
-              key={g}
-              onClick={() => setFilter(g)}
-              className={`px-2 py-1 text-xs rounded ${filter === g ? "bg-black text-white" : "bg-gray-100"}`}
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+            <span className="font-medium">Solo hoy</span>
+            <span
+              onClick={() => setOnlyToday(!onlyToday)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${onlyToday ? "bg-green-600" : "bg-gray-300"}`}
+              role="switch"
+              aria-checked={onlyToday}
             >
-              Grupo {g}
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${onlyToday ? "translate-x-5" : "translate-x-0.5"}`}
+              />
+            </span>
+          </label>
+          <div className="flex gap-1 flex-wrap">
+            <button
+              onClick={() => setFilter("all")}
+              className={`px-2 py-1 text-xs rounded ${filter === "all" ? "bg-black text-white" : "bg-gray-100"}`}
+            >
+              Todos
             </button>
-          ))}
+            {GROUPS.map((g) => (
+              <button
+                key={g}
+                onClick={() => setFilter(g)}
+                className={`px-2 py-1 text-xs rounded ${filter === g ? "bg-black text-white" : "bg-gray-100"}`}
+              >
+                Grupo {g}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
+      {onlyToday && showingDates.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-3 rounded text-sm text-center">
+          ⚽ No hay partidos hoy{filter !== "all" ? ` para el Grupo ${filter}` : ""}.{" "}
+          <button onClick={() => setOnlyToday(false)} className="underline font-medium">
+            Ver todos los días
+          </button>
+        </div>
+      )}
+
       <div className="space-y-3">
-        {Object.entries(groupedByDate)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([dateKey, dayMatches]) => (
-            <div key={dateKey} id={`day-${dateKey}`} className="bg-white border rounded-lg overflow-hidden">
+        {showingDates.map((dateKey) => {
+          const dayMatches = groupedByDate[dateKey];
+          return (
+            <div key={dateKey} className="bg-white border rounded-lg overflow-hidden">
               <div className={`px-3 py-2 border-b text-sm font-medium ${dateKey === todayDateKey ? "bg-green-50 text-green-800 border-green-200" : "bg-gray-50"}`}>
                 <LocalDate iso={dayMatches[0].kickoff} format="date" />
                 {dateKey === todayDateKey && (
@@ -235,7 +237,8 @@ export default function PredictionList({
                 })}
               </div>
             </div>
-          ))}
+          );
+        })}
       </div>
     </div>
   );
