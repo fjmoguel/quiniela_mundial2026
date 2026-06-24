@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import LocalDate from "./LocalDate";
 
 type Team = { id: string; name: string; flag: string };
@@ -25,6 +25,10 @@ type Pred = {
 
 const GROUPS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
 
+// LocalStorage keys for persistent UI state
+const LS_ONLY_TODAY = "quiniela:onlyToday";
+const LS_FILTER = "quiniela:groupFilter";
+
 export default function PredictionList({
   matches,
   myPreds: initial,
@@ -34,11 +38,46 @@ export default function PredictionList({
   myPreds: Record<string, Pred>;
   locked: boolean;
 }) {
+  // Start with defaults to avoid SSR hydration mismatch.
+  // Then hydrate from localStorage in useEffect so the state survives
+  // user switches (which re-mount this component via `key={userId}`).
   const [filter, setFilter] = useState<string>("all");
   const [onlyToday, setOnlyToday] = useState<boolean>(false);
+  const [hydrated, setHydrated] = useState(false);
+
   const [myPreds, setMyPreds] = useState<Record<string, Pred>>(initial);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const saveTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Hydrate from localStorage on mount (client-only, after SSR)
+  useEffect(() => {
+    try {
+      const savedToday = localStorage.getItem(LS_ONLY_TODAY);
+      if (savedToday === "true") setOnlyToday(true);
+      const savedFilter = localStorage.getItem(LS_FILTER);
+      if (savedFilter && (savedFilter === "all" || GROUPS.includes(savedFilter))) {
+        setFilter(savedFilter);
+      }
+    } catch {
+      // localStorage not available, ignore
+    }
+    setHydrated(true);
+  }, []);
+
+  // Persist to localStorage when changed (only after hydration to avoid overwriting)
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(LS_ONLY_TODAY, String(onlyToday));
+    } catch {}
+  }, [onlyToday, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(LS_FILTER, filter);
+    } catch {}
+  }, [filter, hydrated]);
 
   const todayDateKey = useMemo(() => {
     const now = new Date();
