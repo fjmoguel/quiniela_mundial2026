@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { isTournamentLocked, isLockedForUser, getBypassDeadline, TOURNAMENT_LOCK } from "@/lib/config";
 import { buildUserBracket } from "@/lib/bracket";
 import BracketView from "@/components/BracketView";
+import BracketScoreSummary from "@/components/BracketScoreSummary";
 import LocalDate from "@/components/LocalDate";
 import UserSelector from "@/components/UserSelector";
 
@@ -82,6 +83,9 @@ export default async function MiBracketPage({
         currentViewedUserId={viewedUser.id}
         currentUserId={me.id}
       />
+
+      {/* NEW: Score summary above the bracket */}
+      <BracketScoreSummary userId={viewedUser.id} bracket={bracket} />
 
       <BracketView
         key={viewedUser.id}
