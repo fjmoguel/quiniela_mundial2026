@@ -352,10 +352,38 @@ function comparePrediction(slot: BracketSlot, real: RealMatchData | undefined): 
     return { bothTeamsMatch, homeTeamInReal, awayTeamInReal, exactScore: false, correctResult: false };
   }
   const sameOrder = predHome === realHome && predAway === realAway;
-  const pH = sameOrder ? slot.predHomeScore : slot.predAwayScore;
-  const pA = sameOrder ? slot.predAwayScore : slot.predHomeScore;
-  const exactScore = pH === real.homeScore && pA === real.awayScore;
-  const correctResult = pH != null && pA != null && Math.sign(pH - pA) === Math.sign(real.homeScore - real.awayScore);
+
+  // Normalize predicted scores to match real home/away orientation
+  const pHome = sameOrder ? slot.predHomeScore : slot.predAwayScore;
+  const pAway = sameOrder ? slot.predAwayScore : slot.predHomeScore;
+  const pHomeET = sameOrder ? slot.predHomeScoreET : slot.predAwayScoreET;
+  const pAwayET = sameOrder ? slot.predAwayScoreET : slot.predHomeScoreET;
+  const pHomePens = sameOrder ? slot.predHomePens : slot.predAwayPens;
+  const pAwayPens = sameOrder ? slot.predAwayPens : slot.predHomePens;
+
+  const exactScore = pHome === real.homeScore && pAway === real.awayScore;
+
+  // Determine winners using cascading (Pen → ET → 90') for both
+  function pickWinner(s90h: number | null, s90a: number | null, hasET: boolean, sETh: number | null, sETa: number | null, hasPen: boolean, sPenh: number | null, sPena: number | null): "home" | "away" | null {
+    if (hasPen && sPenh != null && sPena != null) {
+      if (sPenh > sPena) return "home";
+      if (sPena > sPenh) return "away";
+    }
+    if (hasET && sETh != null && sETa != null) {
+      if (sETh > sETa) return "home";
+      if (sETa > sETh) return "away";
+    }
+    if (s90h != null && s90a != null) {
+      if (s90h > s90a) return "home";
+      if (s90a > s90h) return "away";
+    }
+    return null;
+  }
+
+  const pWinner = pickWinner(pHome, pAway, slot.predExtraTime, pHomeET, pAwayET, slot.predPenalties, pHomePens, pAwayPens);
+  const rWinner = pickWinner(real.homeScore, real.awayScore, real.wentToExtraTime, real.homeScoreET, real.awayScoreET, real.wentToPenalties, real.homePens, real.awayPens);
+  const correctResult = pWinner != null && rWinner != null && pWinner === rWinner;
+
   return { bothTeamsMatch, homeTeamInReal, awayTeamInReal, exactScore, correctResult };
 }
 
