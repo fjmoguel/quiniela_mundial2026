@@ -121,7 +121,10 @@ export default async function MiBracketPage({
     }
   }
 
-  // Bonus pts per slot — if team in slot reached corresponding next round in reality
+  // Bonus pts per slot — only if the user's PREDICTED winner actually reached
+  // the corresponding next round in reality. The +N appears next to the
+  // predicted winner ONLY; no bonus to the predicted loser even if that team
+  // happened to advance in reality.
   const bonusByMatchNum: Record<number, { home: number; away: number }> = {};
   if (!viewingReal) {
     for (const slot of bracket) {
@@ -130,8 +133,11 @@ export default async function MiBracketPage({
       const round = BRACKET_ROUNDS.find((r) => r.key === nextRound);
       const pts = round?.pointsPerCorrect ?? 0;
       const realSet = teamsInRealRound[nextRound];
-      const homePts = slot.homeTeamId && realSet?.has(slot.homeTeamId) ? pts : 0;
-      const awayPts = slot.awayTeamId && realSet?.has(slot.awayTeamId) ? pts : 0;
+      const winnerId = slot.predWinnerTeamId;
+      // Only give bonus if user's predicted winner actually advanced in real life
+      const winnerAdvanced = winnerId && realSet?.has(winnerId);
+      const homePts = winnerAdvanced && winnerId === slot.homeTeamId ? pts : 0;
+      const awayPts = winnerAdvanced && winnerId === slot.awayTeamId ? pts : 0;
       if (homePts > 0 || awayPts > 0) {
         bonusByMatchNum[slot.matchNum] = { home: homePts, away: awayPts };
       }
