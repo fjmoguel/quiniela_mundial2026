@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { isTournamentLocked, isLockedForUser, getBypassDeadline, TOURNAMENT_LOCK } from "@/lib/config";
+import { isTournamentLocked, isLockedForUser, getBypassDeadline, TOURNAMENT_LOCK, BRACKET_ROUNDS } from "@/lib/config";
 import { buildUserBracket } from "@/lib/bracket";
 import { buildRealBracket } from "@/lib/realBracket";
 import BracketView, { type RealMatchData } from "@/components/BracketView";
@@ -12,14 +12,10 @@ import UserSelector from "@/components/UserSelector";
 const REAL_BRACKET_ID = "__real__";
 
 function getRealWinner(m: {
-  homeTeamId: string | null;
-  awayTeamId: string | null;
-  homeScore: number | null;
-  awayScore: number | null;
-  homeScoreET: number | null;
-  awayScoreET: number | null;
-  homePens: number | null;
-  awayPens: number | null;
+  homeTeamId: string | null; awayTeamId: string | null;
+  homeScore: number | null; awayScore: number | null;
+  homeScoreET: number | null; awayScoreET: number | null;
+  homePens: number | null; awayPens: number | null;
 }): string | null {
   if (!m.homeTeamId || !m.awayTeamId) return null;
   if (m.homeScore == null || m.awayScore == null) return null;
@@ -51,6 +47,10 @@ function extractMatchNum(label: string | null, stage: string): number | null {
   return null;
 }
 
+const STAGE_NEXT_ROUND: Record<string, string> = {
+  r32: "r16", r16: "qf", qf: "sf", sf: "final", final: "champion", third_place: "third",
+};
+
 export default async function MiBracketPage({
   searchParams,
 }: {
@@ -78,7 +78,6 @@ export default async function MiBracketPage({
   const teams = await prisma.team.findMany();
   const teamById = Object.fromEntries(teams.map((t) => [t.id, t]));
 
-  // Build real-by-match-num map for comparison and toggle
   const koMatchesAll = await prisma.match.findMany({
     where: { stage: { in: ["r32", "r16", "qf", "sf", "third_place", "final"] } },
   });
@@ -88,20 +87,70 @@ export default async function MiBracketPage({
     if (!num) continue;
     realByMatchNum[num] = {
       matchNum: num,
-      homeTeamId: m.homeTeamId,
-      awayTeamId: m.awayTeamId,
+      homeTeamId: m.homeTeamId, awayTeamId: m.awayTeamId,
       homeTeam: m.homeTeamId ? (teamById as any)[m.homeTeamId] ?? null : null,
       awayTeam: m.awayTeamId ? (teamById as any)[m.awayTeamId] ?? null : null,
-      homeScore: m.homeScore,
-      awayScore: m.awayScore,
-      homeScoreET: m.homeScoreET,
-      awayScoreET: m.awayScoreET,
-      homePens: m.homePens,
-      awayPens: m.awayPens,
+      homeScore: m.homeScore, awayScore: m.awayScore,
+      homeScoreET: m.homeScoreET, awayScoreET: m.awayScoreET,
+      homePens: m.homePens, awayPens: m.awayPens,
       wentToExtraTime: m.wentToExtraTime ?? false,
       wentToPenalties: m.wentToPenalties ?? false,
       realWinnerTeamId: getRealWinner(m),
     };
+  }
+
+  // Sets of teams that REALLY reached each round
+  const teamsInRealRound: Record<string, Set<string>> = {
+    r16: new Set(), qf: new Set(), sf: new Set(),
+    final: new Set(), champion: new Set(), third: new Set(),
+  };
+  for (const m of koMatchesAll) {
+    if (m.stage === "r32") {
+      const w = getRealWinner(m); if (w) teamsInRealRound.r16.add(w);
+    } else if (m.stage === "r16") {
+      const w = getRealWinner(m); if (w) teamsInRealRound.qf.add(w);
+    } else if (m.stage === "qf") {
+      const w = getRealWinner(m); if (w) teamsInRealRound.sf.add(w);
+    } else if (m.stage === "sf") {
+      if (m.homeTeamId) teamsInRealRound.final.add(m.homeTeamId);
+      if (m.awayTeamId) teamsInRealRound.final.add(m.awayTeamId);
+    } else if (m.stage === "final") {
+      const w = getRealWinner(m); if (w) teamsInRealRound.champion.add(w);
+    } else if (m.stage === "third_place") {
+      const w = getRealWinner(m); if (w) teamsInRealRound.third.add(w);
+    }
+  }
+
+  // Bonus pts per slot — if team in slot reached corresponding next round in reality
+  const bonusByMatchNum: Record<number, { home: number; away: number }> = {};
+  if (!viewingReal) {
+    for (const slot of bracket) {
+      const nextRound = STAGE_NEXT_ROUND[slot.stage];
+      if (!nextRound) continue;
+      const round = BRACKET_ROUNDS.find((r) => r.key === nextRound);
+      const pts = round?.pointsPerCorrect ?? 0;
+      const realSet = teamsInRealRound[nextRound];
+      const homePts = slot.homeTeamId && realSet?.has(slot.homeTeamId) ? pts : 0;
+      const awayPts = slot.awayTeamId && realSet?.has(slot.awayTeamId) ? pts : 0;
+      if (homePts > 0 || awayPts > 0) {
+        bonusByMatchNum[slot.matchNum] = { home: homePts, away: awayPts };
+      }
+    }
+  }
+
+  // KO match marker points per matchId from Prediction.pointsAwarded
+  const pointsByMatchId: Record<string, number> = {};
+  if (!viewingReal) {
+    const koPreds = await prisma.prediction.findMany({
+      where: {
+        userId: viewedUser!.id,
+        matchId: { in: koMatchesAll.map((m) => m.id) },
+      },
+      select: { matchId: true, pointsAwarded: true },
+    });
+    for (const p of koPreds) {
+      pointsByMatchId[p.matchId] = p.pointsAwarded ?? 0;
+    }
   }
 
   const groupPredCount = viewingReal
@@ -184,6 +233,8 @@ export default async function MiBracketPage({
         }))}
         locked={locked}
         realByMatchNum={!viewingReal ? realByMatchNum : undefined}
+        bonusByMatchNum={!viewingReal ? bonusByMatchNum : undefined}
+        pointsByMatchId={!viewingReal ? pointsByMatchId : undefined}
       />
     </div>
   );
