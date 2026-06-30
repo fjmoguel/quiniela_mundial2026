@@ -3,17 +3,15 @@ import { buildUserBracket } from "./bracket";
 import { SCORING } from "./config";
 
 /**
- * Recalculates `pointsAwarded` for all knockout match predictions.
+ * Recalculates `pointsAwarded` for all knockout match predictions for ALL users.
  *
- * BUG FIX: previously, KO points were given based ONLY on score numbers
- * matching (e.g. 2-1 == 2-1), without verifying that the teams predicted
- * by the user actually matched the teams in the real match.
- *
- * NEW LOGIC: a KO prediction earns points ONLY IF the user's predicted
- * teams (from their bracket) match the real teams in that match
- * (in any home/away order).
- *
- * Idempotent — safe to run multiple times.
+ * Logic:
+ * - Verify the user's predicted teams (from their bracket) match the real teams
+ * - Determine predicted winner using cascading: 90' → ET → Pen (matches how real
+ *   winner is determined)
+ * - Award KO_RESULT (2) if predicted winner matches real winner
+ * - Award KO_EXACT (6) if 90' score is exact
+ * - Award ET/Pen bonuses if applicable
  */
 export async function recalcKoPointsForAllUsers(): Promise<{
   usersUpdated: number;
@@ -75,9 +73,42 @@ export async function recalcKoPointsForAllUsers(): Promise<{
 }
 
 /**
- * Score a single KO match prediction, verifying teams match before awarding.
+ * Determines the winner side ("home" or "away") of a match using cascading logic.
+ * Used both for real winner and predicted winner.
  */
-function scoreKoMatch(pred: any, match: any, userSlot: any | null): number {
+function cascadeWinner(
+  s90h: number | null,
+  s90a: number | null,
+  hasET: boolean,
+  sETh: number | null,
+  sETa: number | null,
+  hasPen: boolean,
+  sPenh: number | null,
+  sPena: number | null
+): "home" | "away" | null {
+  // Penalties (decisive if they happened)
+  if (hasPen && sPenh != null && sPena != null) {
+    if (sPenh > sPena) return "home";
+    if (sPena > sPenh) return "away";
+  }
+  // Extra time
+  if (hasET && sETh != null && sETa != null) {
+    if (sETh > sETa) return "home";
+    if (sETa > sETh) return "away";
+  }
+  // Regular 90'
+  if (s90h != null && s90a != null) {
+    if (s90h > s90a) return "home";
+    if (s90a > s90h) return "away";
+  }
+  return null;
+}
+
+/**
+ * Score a single KO match prediction, verifying teams match.
+ */
+export function scoreKoMatch(pred: any, match: any, userSlot: any | null): number {
+  // No result yet → 0 pts
   if (match.homeScore == null || match.awayScore == null) return 0;
   if (!userSlot) return 0;
 
@@ -94,34 +125,39 @@ function scoreKoMatch(pred: any, match: any, userSlot: any | null): number {
   const swappedOrder = predHomeTeamId === realAwayId && predAwayTeamId === realHomeId;
   if (!sameOrder && !swappedOrder) return 0;
 
-  let pHome: number, pAway: number;
-  let pHomeET: number | null, pAwayET: number | null;
-  let pHomePens: number | null, pAwayPens: number | null;
-  if (sameOrder) {
-    pHome = pred.predHomeScore;
-    pAway = pred.predAwayScore;
-    pHomeET = pred.predHomeScoreET;
-    pAwayET = pred.predAwayScoreET;
-    pHomePens = pred.predHomePens;
-    pAwayPens = pred.predAwayPens;
-  } else {
-    pHome = pred.predAwayScore;
-    pAway = pred.predHomeScore;
-    pHomeET = pred.predAwayScoreET;
-    pAwayET = pred.predHomeScoreET;
-    pHomePens = pred.predAwayPens;
-    pAwayPens = pred.predHomePens;
-  }
+  // Normalize predicted scores to match the real home/away orientation
+  const pHome = sameOrder ? pred.predHomeScore : pred.predAwayScore;
+  const pAway = sameOrder ? pred.predAwayScore : pred.predHomeScore;
+  const pHomeET = sameOrder ? pred.predHomeScoreET : pred.predAwayScoreET;
+  const pAwayET = sameOrder ? pred.predAwayScoreET : pred.predHomeScoreET;
+  const pHomePens = sameOrder ? pred.predHomePens : pred.predAwayPens;
+  const pAwayPens = sameOrder ? pred.predAwayPens : pred.predHomePens;
+
+  // Determine predicted winner (cascading: Pen → ET → 90')
+  const predictedWinner = cascadeWinner(
+    pHome, pAway,
+    pred.predExtraTime, pHomeET, pAwayET,
+    pred.predPenalties, pHomePens, pAwayPens
+  );
+
+  // Determine real winner (same cascading logic)
+  const realWinner = cascadeWinner(
+    match.homeScore, match.awayScore,
+    match.wentToExtraTime ?? false, match.homeScoreET, match.awayScoreET,
+    match.wentToPenalties ?? false, match.homePens, match.awayPens
+  );
 
   let pts = 0;
+
+  // Exact 90' score → KO_EXACT (implies correct result too)
   if (pHome === match.homeScore && pAway === match.awayScore) {
     pts += SCORING.KO_EXACT;
-  } else {
-    const realSign = Math.sign(match.homeScore - match.awayScore);
-    const predSign = Math.sign(pHome - pAway);
-    if (realSign === predSign) pts += SCORING.KO_RESULT;
+  } else if (predictedWinner && realWinner && predictedWinner === realWinner) {
+    // Correct winner (regardless of how — 90'/ET/Pen) → KO_RESULT
+    pts += SCORING.KO_RESULT;
   }
 
+  // ET bonuses (only if real match went to ET AND user predicted it would)
   if (match.wentToExtraTime && pred.predExtraTime) {
     pts += SCORING.KO_ET_BONUS;
     if (
@@ -133,6 +169,7 @@ function scoreKoMatch(pred: any, match: any, userSlot: any | null): number {
     }
   }
 
+  // Pen bonuses (only if real match went to Pen AND user predicted it would)
   if (match.wentToPenalties && pred.predPenalties) {
     pts += SCORING.KO_PEN_BONUS;
     if (

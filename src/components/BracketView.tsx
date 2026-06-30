@@ -383,6 +383,10 @@ function Card({
   const awayBonus = mode === "mine" ? (bonus?.away ?? 0) : 0;
   const showMatchPts = mode === "mine" && matchPoints && matchPoints > 0;
 
+  // Green highlight for team names that are in the real match
+  const homeNameColor = cmp && cmp.homeTeamInReal ? "text-green-700 font-semibold" : "";
+  const awayNameColor = cmp && cmp.awayTeamInReal ? "text-green-700 font-semibold" : "";
+
   if (editing) {
     return (
       <div className="border-2 border-blue-400 bg-blue-50 rounded p-2 text-xs shadow-xl" style={{ width: CARD_W + 20, marginLeft: -10 }}>
@@ -448,7 +452,7 @@ function Card({
       </div>
       <div className={`flex items-center gap-1 ${homeWon ? "font-bold" : ""}`}>
         <span className="text-sm w-4 shrink-0">{home.flag}</span>
-        <span className="flex-1 truncate text-[11px]">
+        <span className={`flex-1 truncate text-[11px] ${homeNameColor}`}>
           {hasTeams ? home.name : <span className="text-gray-400 italic">{home.name}</span>}
           {homeBonus > 0 && (
             <sup className="text-green-700 font-bold ml-0.5 text-[9px]">+{homeBonus}</sup>
@@ -458,7 +462,7 @@ function Card({
       </div>
       <div className={`flex items-center gap-1 ${awayWon ? "font-bold" : ""}`}>
         <span className="text-sm w-4 shrink-0">{away.flag}</span>
-        <span className="flex-1 truncate text-[11px]">
+        <span className={`flex-1 truncate text-[11px] ${awayNameColor}`}>
           {hasTeams ? away.name : <span className="text-gray-400 italic">{away.name}</span>}
           {awayBonus > 0 && (
             <sup className="text-green-700 font-bold ml-0.5 text-[9px]">+{awayBonus}</sup>
