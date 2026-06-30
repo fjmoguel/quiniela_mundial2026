@@ -54,8 +54,17 @@ export async function POST(req: Request) {
   if ("awayPens" in body) data.awayPens = body.awayPens ?? null;
   if ("wentToExtraTime" in body) data.wentToExtraTime = body.wentToExtraTime ?? false;
   if ("wentToPenalties" in body) data.wentToPenalties = body.wentToPenalties ?? false;
+  // Team assignments (for KO rounds where the admin manually picks teams)
+  if ("homeTeamId" in body) data.homeTeamId = body.homeTeamId || null;
+  if ("awayTeamId" in body) data.awayTeamId = body.awayTeamId || null;
 
   await prisma.match.update({ where: { id: matchId }, data });
+
+  // Fetch the updated match with team relations to return to client
+  const updatedMatch = await prisma.match.findUnique({
+    where: { id: matchId },
+    include: { homeTeam: true, awayTeam: true },
+  });
 
   const isKO = ["r32", "r16", "qf", "sf", "third_place", "final"].includes(match.stage);
   const isGroup = match.stage === "group";
@@ -119,6 +128,7 @@ export async function POST(req: Request) {
     ok: true,
     matchUpdated: matchId,
     stage: match.stage,
+    updatedMatch,
     propagated: propagateInfo,
     recalcedKO: recalcInfo,
     recalcedGroupPreds: groupRecalcCount,
