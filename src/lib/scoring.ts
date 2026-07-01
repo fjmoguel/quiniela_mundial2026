@@ -116,10 +116,21 @@ export async function scoreBracketForUser(userId: string): Promise<number> {
     where: { stage: { in: ["r32", "r16", "qf", "sf", "final", "third_place"] } },
   });
 
+  // Cascading winner: 90' → ET → penalties
   function winnerOf(m: (typeof matches)[number]): string | null {
     if (m.homeScore == null || m.awayScore == null) return null;
     if (m.homeScore > m.awayScore) return m.homeTeamId;
     if (m.awayScore > m.homeScore) return m.awayTeamId;
+    // Tied 90' → check ET
+    if (m.homeScoreET != null && m.awayScoreET != null) {
+      if (m.homeScoreET > m.awayScoreET) return m.homeTeamId;
+      if (m.awayScoreET > m.homeScoreET) return m.awayTeamId;
+    }
+    // Tied ET → check penalties
+    if (m.homePens != null && m.awayPens != null) {
+      if (m.homePens > m.awayPens) return m.homeTeamId;
+      if (m.awayPens > m.homePens) return m.awayTeamId;
+    }
     return null;
   }
 
@@ -143,9 +154,11 @@ export async function scoreBracketForUser(userId: string): Promise<number> {
     const w = winnerOf(m);
     if (w) actualByRound.sf.add(w);
   }
-  for (const m of matches.filter((x) => x.stage === "sf")) {
-    const w = winnerOf(m);
-    if (w) actualByRound.final.add(w);
+  // For "final" round we count both finalists (both teams IN the final match)
+  const sfMatches = matches.filter((x) => x.stage === "sf");
+  for (const m of sfMatches) {
+    if (m.homeTeamId) actualByRound.final.add(m.homeTeamId);
+    if (m.awayTeamId) actualByRound.final.add(m.awayTeamId);
   }
   const tp = matches.find((x) => x.stage === "third_place");
   if (tp) {
